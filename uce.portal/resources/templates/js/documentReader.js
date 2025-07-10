@@ -1615,6 +1615,7 @@ function renderTemporalExplorer(containerId) {
         console.error("Error loading or processing annotation data:", err);
     });
 }
+<<<<<<< HEAD
 
 function initializeTopicSettingsPanel() {
 
@@ -1818,3 +1819,5 @@ function initializeTopicSettingsPanel() {
         makeDraggable(panel, 'h4')
     );
 }
+=======
+>>>>>>> c5d32d5 (add basic TipTap implementation)
