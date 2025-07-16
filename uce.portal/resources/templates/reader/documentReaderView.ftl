@@ -391,6 +391,8 @@
 
     </div>
 </div>
+
+    <script type="module" src="/js/dist/tiptap-bundle.js"></script>
         </body>
 
 <#--<script type="module">
