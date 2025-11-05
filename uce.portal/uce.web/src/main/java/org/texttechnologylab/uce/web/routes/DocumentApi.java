@@ -41,7 +41,8 @@ public class DocumentApi implements UceApi {
         var languageResources = LanguageResources.fromRequest(ctx);
 
         var documentId = ExceptionUtils.tryCatchLog(() -> Long.parseLong(ctx.queryParam("documentId")),
-                (ex) -> logger.error("Error: couldn't determine the documentId and hence can't return the metadata. ", ex));
+                (ex) -> logger.error("Error: couldn't determine the documentId and hence can't return the metadata. ",
+                        ex));
         if (documentId == null) {
             model.put("information", languageResources.get("missingParameterError"));
             ctx.render("defaultError.ftl");
@@ -72,7 +73,8 @@ public class DocumentApi implements UceApi {
         var languageResources = LanguageResources.fromRequest(ctx);
 
         var corpusId = ExceptionUtils.tryCatchLog(() -> Long.parseLong(ctx.queryParam("corpusId")),
-                (ex) -> logger.error("Error: couldn't determine the corpusId and hence can't return the document list. ", ex));
+                (ex) -> logger.error(
+                        "Error: couldn't determine the corpusId and hence can't return the document list. ", ex));
         if (corpusId == null) {
             model.put("information", languageResources.get("missingParameterError"));
             ctx.render("defaultError.ftl", model);
@@ -80,7 +82,8 @@ public class DocumentApi implements UceApi {
         }
         var page = ExceptionUtils.tryCatchLog(() -> Integer.parseInt(ctx.queryParam("page")),
                 (ex) -> logger.error("Error: couldn't determine the page, defaulting to page 1 then. ", ex));
-        if (page == null) page = 1;
+        if (page == null)
+            page = 1;
 
         try {
             var take = 10;
@@ -107,7 +110,9 @@ public class DocumentApi implements UceApi {
         var model = new HashMap<String, Object>();
 
         var corpusId = ExceptionUtils.tryCatchLog(() -> Long.parseLong(ctx.queryParam("id")),
-                (ex) -> logger.error("Error: the url for the corpus inspector requires an 'id' query parameter that is the corpusId. ", ex));
+                (ex) -> logger.error(
+                        "Error: the url for the corpus inspector requires an 'id' query parameter that is the corpusId. ",
+                        ex));
         if (corpusId == null) {
             ctx.render("defaultError.ftl");
             return;
@@ -137,7 +142,9 @@ public class DocumentApi implements UceApi {
         var model = new HashMap<String, Object>();
 
         var id = ExceptionUtils.tryCatchLog(() -> Long.parseLong(ctx.queryParam("id")),
-                (ex) -> logger.error("Error: the url for the document 3d globe requires an 'id' query parameter that is the document id.", ex));
+                (ex) -> logger.error(
+                        "Error: the url for the document 3d globe requires an 'id' query parameter that is the document id.",
+                        ex));
         if (id == null) {
             ctx.render("defaultError.ftl");
             return;
@@ -145,7 +152,7 @@ public class DocumentApi implements UceApi {
 
         try {
             // I've forgotten why I introduced this variable here?...
-            //var type = request.queryParams("type");
+            // var type = request.queryParams("type");
             var document = db.getDocumentById(id);
             var data = db.getGlobeDataForDocument(id);
             var gson = new Gson();
@@ -169,7 +176,7 @@ public class DocumentApi implements UceApi {
 
         var id = ExceptionUtils.tryCatchLog(() -> ctx.queryParam("id"),
                 (ex) -> logger.error("Error: the url for the document reader requires an 'id' query parameter. " +
-                                     "Document reader can't be built.", ex));
+                        "Document reader can't be built.", ex));
         if (id == null) {
             ctx.render("defaultError.ftl");
             return;
@@ -177,7 +184,8 @@ public class DocumentApi implements UceApi {
 
         // Check if we have an searchId parameter. This is optional
         var searchId = ExceptionUtils.tryCatchLog(() -> ctx.queryParam("searchId"),
-                (ex) -> logger.warn("Opening a document view but no searchId parameter was provided. Currently, this shouldn't happen, but it didn't stop the procedure."));
+                (ex) -> logger.warn(
+                        "Opening a document view but no searchId parameter was provided. Currently, this shouldn't happen, but it didn't stop the procedure."));
 
         try {
             var doc = db.getCompleteDocumentById(Long.parseLong(id), 0, 10);
@@ -188,12 +196,15 @@ public class DocumentApi implements UceApi {
             var casDownloadExists = s3StorageService.objectExists(casDownloadName);
             model.put("casDownloadName", casDownloadExists ? casDownloadName : "");
 
-            // If this document was opened from an active search, we can highlight the search tokens in the text
+            // If this document was opened from an active search, we can highlight the
+            // search tokens in the text
             // This is only optional and works fine even without the search tokens.
             if (searchId != null && SessionManager.ActiveSearches.containsKey(searchId)) {
                 var activeSearchState = (SearchState) SessionManager.ActiveSearches.get(searchId);
-                // For SRL Search, there are no search tokens really. We will handle that exclusively later.
-                if (activeSearchState.getSearchType() != SearchType.SEMANTICROLE || activeSearchState.getSearchType() != SearchType.NEG) {
+                // For SRL Search, there are no search tokens really. We will handle that
+                // exclusively later.
+                if (activeSearchState.getSearchType() != SearchType.SEMANTICROLE
+                        || activeSearchState.getSearchType() != SearchType.NEG) {
                     if (activeSearchState.getSearchTokens() != null)
                         model.put("searchTokens", String.join("[TOKEN]", activeSearchState.getSearchTokens()));
                 }
@@ -216,7 +227,9 @@ public class DocumentApi implements UceApi {
         var value = ExceptionUtils.tryCatchLog(() -> ctx.queryParam("value"),
                 (ex) -> logger.error("Error: document deletion requires a 'value' query parameter. ", ex));
         var valueTypeStr = ExceptionUtils.tryCatchLog(() -> ctx.queryParam("value_type"),
-                (ex) -> logger.error("Error: document deletion requires a 'value_type' query parameter (e.g. STRING, NUMBER, ...). ", ex));
+                (ex) -> logger.error(
+                        "Error: document deletion requires a 'value_type' query parameter (e.g. STRING, NUMBER, ...). ",
+                        ex));
         if (key == null || value == null || valueTypeStr == null) {
             ctx.render("defaultError.ftl");
             return;
@@ -230,8 +243,7 @@ public class DocumentApi implements UceApi {
             Map<String, Object> result = new HashMap<>();
             result.put("document_ids", documentIds);
             ctx.json(result);
-        }
-        catch (Exception ex) {
+        } catch (Exception ex) {
             logger.error(ex);
             ctx.status(500);
             ctx.render("defaultError.ftl");
@@ -247,7 +259,9 @@ public class DocumentApi implements UceApi {
         var value = ExceptionUtils.tryCatchLog(() -> ctx.queryParam("value"),
                 (ex) -> logger.error("Error: document deletion requires a 'value' query parameter. ", ex));
         var valueTypeStr = ExceptionUtils.tryCatchLog(() -> ctx.queryParam("value_type"),
-                (ex) -> logger.error("Error: document deletion requires a 'value_type' query parameter (e.g. STRING, NUMBER, ...). ", ex));
+                (ex) -> logger.error(
+                        "Error: document deletion requires a 'value_type' query parameter (e.g. STRING, NUMBER, ...). ",
+                        ex));
         if (key == null || value == null || valueTypeStr == null) {
             ctx.render("defaultError.ftl");
             return;
@@ -262,8 +276,7 @@ public class DocumentApi implements UceApi {
             Map<String, Object> result = new HashMap<>();
             result.put("document_id", documentId);
             ctx.json(result);
-        }
-        catch (Exception ex) {
+        } catch (Exception ex) {
             logger.error(ex);
             ctx.status(500);
             ctx.render("defaultError.ftl");
@@ -292,7 +305,8 @@ public class DocumentApi implements UceApi {
         var model = new HashMap<String, Object>();
 
         var id = ExceptionUtils.tryCatchLog(() -> ctx.queryParam("id"),
-                (ex) -> logger.error("Error: the url for the document pages list view requires an 'id' query parameter. ", ex));
+                (ex) -> logger.error(
+                        "Error: the url for the document pages list view requires an 'id' query parameter. ", ex));
         if (id == null) {
             ctx.render("defaultError.ftl");
             return;
@@ -306,7 +320,8 @@ public class DocumentApi implements UceApi {
             model.put("documentText", doc.getFullText());
             model.put("documentPages", doc.getPages(10, skip));
         } catch (Exception ex) {
-            logger.error("Error getting the pages list view - either the document couldn't be fetched (id=" + id + ") or its annotations.", ex);
+            logger.error("Error getting the pages list view - either the document couldn't be fetched (id=" + id
+                    + ") or its annotations.", ex);
             ctx.render("defaultError.ftl");
             return;
         }
@@ -362,9 +377,9 @@ public class DocumentApi implements UceApi {
                 var pageMap = new HashMap<String, Object>();
                 pageMap.put("pageId", row[0]);
                 pageMap.put("taxonValue", row[1]);
-                //var taxonValues = row[1].toString().replaceAll("[\\{\\}]", "").split(",");
-                //pageMap.put("taxon_values", taxonValues);
-                //pageMap.put("taxon_count", row[2]);
+                // var taxonValues = row[1].toString().replaceAll("[\\{\\}]", "").split(",");
+                // pageMap.put("taxon_values", taxonValues);
+                // pageMap.put("taxon_count", row[2]);
                 result.add(pageMap);
             }
 
@@ -493,14 +508,15 @@ public class DocumentApi implements UceApi {
         }
     }
 
-
     public void getSentenceTopicsWithEntities(Context ctx) {
         var documentId = ExceptionUtils.tryCatchLog(() -> Long.parseLong(ctx.queryParam("documentId")),
-                (ex) -> logger.error("Error: couldn't determine the documentId for sentence topics with entities. ", ex));
+                (ex) -> logger.error("Error: couldn't determine the documentId for sentence topics with entities. ",
+                        ex));
 
         if (documentId == null) {
             ctx.status(400);
-            ctx.render("defaultError.ftl", Map.of("information", "Missing documentId parameter for sentence topics with entities"));
+            ctx.render("defaultError.ftl",
+                    Map.of("information", "Missing documentId parameter for sentence topics with entities"));
             return;
         }
 
@@ -526,8 +542,7 @@ public class DocumentApi implements UceApi {
     public void getTopicWordsByDocument(Context ctx) {
         Long documentId = ExceptionUtils.tryCatchLog(
                 () -> Long.parseLong(ctx.queryParam("documentId")),
-                (ex) -> logger.error("Error: couldn't determine the documentId for topic words.", ex)
-        );
+                (ex) -> logger.error("Error: couldn't determine the documentId for topic words.", ex));
 
         if (documentId == null) {
             ctx.status(400);
@@ -567,11 +582,13 @@ public class DocumentApi implements UceApi {
 
     public void getUnifiedTopicToSentenceMap(Context ctx) {
         var documentId = ExceptionUtils.tryCatchLog(() -> Long.parseLong(ctx.queryParam("documentId")),
-                (ex) -> logger.error("Error: couldn't determine the documentId for unified topic to sentence mapping.", ex));
+                (ex) -> logger.error("Error: couldn't determine the documentId for unified topic to sentence mapping.",
+                        ex));
 
         if (documentId == null) {
             ctx.status(400);
-            ctx.render("defaultError.ftl", Map.of("information", "Missing documentId parameter for unified topic to sentence mapping"));
+            ctx.render("defaultError.ftl",
+                    Map.of("information", "Missing documentId parameter for unified topic to sentence mapping"));
             return;
         }
 
@@ -591,7 +608,8 @@ public class DocumentApi implements UceApi {
         } catch (Exception ex) {
             logger.error("Error retrieving unified topic to sentence mapping.", ex);
             ctx.status(500);
-            ctx.render("defaultError.ftl", Map.of("information", "Error retrieving unified topic to sentence mapping."));
+            ctx.render("defaultError.ftl",
+                    Map.of("information", "Error retrieving unified topic to sentence mapping."));
         }
     }
 

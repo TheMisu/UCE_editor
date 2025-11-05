@@ -61,7 +61,6 @@
     <script src="js/visualization/cdns/drawflow-last.js"></script>
     <script type="module" src="js/md-block.js"></script>
 
-<<<<<<< HEAD
     <!-- for rendering markdown to HTML, use the markdown-viewer box -->
     <script src="https://cdn.jsdelivr.net/npm/markdown-it/dist/markdown-it.min.js"></script>
     <script>
@@ -76,15 +75,16 @@
         }
         customElements.define('markdown-viewer', MarkdownViewer);
     </script>
-=======
     <!-- text editor scripts -->
-    <script src="/js/dist/tiptap-bundle.js"></script>
->>>>>>> c5d32d5 (add basic TipTap implementation)
+    <!-- <script src="/js/dist/tiptap-bundle.js"></script> -->
 
     <title>${document.getDocumentTitle()}</title>
 </head>
 
 <body class="no-cursor">
+<!-- embedds the document's fulltext s.t. the TipTap editor 
+     can easilly access it -->
+<script>window.EMBEDDED_DOCUMENT_FULLTEXT = "${document.fullText?js_string}";</script>
 
 <#include "*/messageModal.ftl">
 
@@ -409,9 +409,4 @@
     <#include "*/js/customContextMenu.js">
 </script>
 
-<<<<<<< HEAD
-
 </html>
-=======
-</html>
->>>>>>> c5d32d5 (add basic TipTap implementation)

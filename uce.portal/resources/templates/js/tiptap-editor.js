@@ -11,6 +11,7 @@ export class TipTapEditor {
     constructor() {
         this.editorContainer = null;
         this.editor = null;
+        this.currentDocumentID = null;
         this.initContainer();
         this.initEventListeners();
     }
@@ -74,102 +75,86 @@ export class TipTapEditor {
             }
         });
     }
-
     /**
-     * Collects text nodes from a DOM node, handlind the addition of newlines 
-     * when <br> tags are found.
-     * @param {Node} node
-     *          The DOM node used for collecting the text content
-     * @returns {string[]}
-     *          Array of text parts
-     */
-    collectTextNodes(node) {
-        const textNodes = [];
-        let prevWasBr = false;
-
-        const collect = (currentNode) => {
-            if (currentNode.nodeType === Node.TEXT_NODE && currentNode.textContent.trim() !== '') {
-                textNodes.push(currentNode.textContent);
-                prevWasBr = false;
-            } else if (currentNode.nodeType === Node.ELEMENT_NODE) {
-                if (currentNode.tagName === 'BR') {
-                    if (prevWasBr) {
-                        textNodes.push('\n\n');
-                    } else {
-                        textNodes.push('\n');
-                    }
-                    prevWasBr = true;
-                } else if (currentNode.classList.contains('ruby-text')) {
-                    textNodes.push(currentNode.textContent);
-                    prevWasBr = false;
-                } else {
-                    Array.from(currentNode.childNodes).forEach(collect);
-                    prevWasBr = false;
-                }
-            }
-        };
-
-        collect(node);
-        return textNodes;
-    }
-
-    /**
-    * Formats the collected text nodes into HTML paragraphs.
-    * @param {string[]} textNodes 
-    *           The array of text parts.
-    * @returns {string} 
-    *           The formatted HTML string.
-    */
-    formatParagraphText(textNodes) {
-        let paraText = textNodes.join(' ');
-        paraText = paraText.replace(/(?<=\s-|—)\s+(?=-|—)/g, '');   // removes whitespace between dashes
-        paraText = paraText.replace(/\s+([.,;:!?)])/g, '$1');       // removes whitespace before punctuation marks and )
-        paraText = paraText.replace(/(\()\s+/g, '$1');              // removes whitespace immediately after (
-
-        let editorContent = '';
-        if (paraText.trim()) {
-            const subPara = paraText.split('\n\n');
-            subPara.forEach(text => {
-                const trimmedText = text.trim();
-                if (trimmedText) {
-                    const addBr = trimmedText.replace(/\n/g, '<br>');
-                    editorContent += `<p>${addBr}</p>`;
-                }
-            });
-        }
-        return editorContent;
-    }
-
-    /**
-    * Opens the editor and loads the content from the document.
-    *
-    * TODO:
-    *   1. FIX weird artifact at the end of the editor.
-    *       * BUG appears because of random paragraph being selected
+    * Opens the editor and loads the document's fulltext (embedded in the page)
     */
     openEditor() {
-        const documentContent = document.querySelector('.document-content');
-        if (!documentContent) return;
+        const readerContainer = document.querySelector('.reader-container');
+        if (!readerContainer) {
+            console.error("Can't find reader container to get document ID.");
+            return;
+        }
+        this.currentDocumentID = parseInt(readerContainer.dataset.id, 10);
+        if (isNaN(this.currentDocumentID)) {
+            console.error("Can't get document ID from the page.");
+            return;
+        }
 
-        // create a copy to preserve original document
-        const contentCopy = documentContent.cloneNode(true);
+        let fullText = null;
 
-        // remove non-text elements
-        contentCopy.querySelectorAll('.blurrer, .text-center, .multi-annotation-popup').forEach(el => {
-            el.remove();
-        });
+        if (window.EMBEDDED_DOCUMENT_FULLTEXT !== undefined) {
+            fullText = window.EMBEDDED_DOCUMENT_FULLTEXT;
+        } else {
+            console.log("Embedded document fulltext not found!");
+        }
 
+        console.log(fullText);
         let editorContent = '';
-        const paragraphs = contentCopy.querySelectorAll('.page-content, .paragraph');
 
-        paragraphs.forEach(paragraphEl => {
-            const textNodes = this.collectTextNodes(paragraphEl);
-            const paragraphHTML = this.formatParagraphText(textNodes);
-            editorContent += paragraphHTML;
-        });
+        // split the text into lines
+        const rawLines = fullText.split('\n');
 
-        // initialize editor
-        if (this.editor) this.editor.destroy();
+        // TipTap loads html elements as text
+        const htmlFragments = [];
+        let currentPara = [];       // lines that belong to the *current* paragraph
+
+        // iterate through the raw text and format them to HTML
+        for (let i = 0; i < rawLines.length; i++) {
+            const line = rawLines[i];
+            const trimmed = line.trim();
+
+            if (trimmed === '') {
+                let emptyCount = 1;
+                while (i + emptyCount < rawLines.length && rawLines[i + emptyCount].trim() === '') {
+                    emptyCount++;
+                }
+                i += emptyCount - 1;
+
+                // 2 or more newlines will be rendered as empty <p>
+                if (emptyCount >= 2) {
+                    if (currentPara.length) {
+                        htmlFragments.push(`<p>${currentPara.join('<br>')}</p>`);
+                        currentPara = [];
+                    }
+                    // for (let e = 0; e < emptyCount; e++) {
+                    //     htmlFragments.push('<p></p>');
+                    // }
+                    htmlFragments.push('<p></p>');
+                }
+
+                // a single newline will be turned into a <br>
+                else {
+                    currentPara.push('');
+                }
+                continue;
+            }
+
+            currentPara.push(line);
+        }
+
+        if (currentPara.length) {
+            // turn the empty-string placeholders that came from a single blank line into <br>
+            const finalLines = currentPara.map(l => (l === '' ? '<br>' : l));
+            htmlFragments.push(`<p>${finalLines.join('')}</p>`);
+        }
+
+        // join everything into the editorContent
+        editorContent = htmlFragments.join('');
+
+        // initialize the editor with the formatted text content
+        if (this.editor) {
+            this.editor.destroy();
+        }
 
         this.editor = new Editor({
             element: this.editorContainer.querySelector('.tiptap-editor'),
@@ -180,15 +165,14 @@ export class TipTapEditor {
                 }),
             ],
             content: editorContent,
+            // content: fullText,
         });
-
         this.editorContainer.style.display = 'block';
     }
 
-    /**
-     * Saves the content from the editor back into the original document structure.
-     * It intelligently updates, adds, or removes paragraphs as needed.
-     */
+    /* Saves the content from the editor back into the original document structure.
+    * It intelligently updates, adds, or removes paragraphs as needed.
+    */
     saveContent() {
         const documentContent = document.querySelector('.document-content');
         if (documentContent && this.editor) {
