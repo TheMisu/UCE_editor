@@ -535,6 +535,7 @@ public class App {
                     get("/findIdByMetadata", (ctx) -> (registry.get(DocumentApi.class)).findDocumentIdByMetadata(ctx));
                     get("/findIdsByMetadata",
                             (ctx) -> (registry.get(DocumentApi.class)).findDocumentIdsByMetadata(ctx));
+                    post("/reanalyze", (ctx) -> (registry.get(DocumentApi.class)).reanalyzeDocument(ctx));
                 });
 
                 path("/rag", () -> {

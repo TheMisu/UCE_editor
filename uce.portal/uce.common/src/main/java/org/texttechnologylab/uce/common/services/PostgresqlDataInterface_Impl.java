@@ -1745,6 +1745,110 @@ public class PostgresqlDataInterface_Impl implements DataInterface {
         });
     }
 
+    /**
+     * Deletes all annotations for a document from the database.
+     * Used to remove outdated annotations s.t. we can store the results from the reanalysis pipeline
+     *
+     * Delete order:
+     * 1. Feelings before emotions due to OneToMany relationship in the Emotion class
+     * 2. Focus, event, scope, xscope, cue before completenegation due to the relationships in CompleteNegation
+     * 3. TopicWord before TopicValueBase
+     * 4. "Main" annotations based on the relationships in Document
+     * 5. TopicWord must be deleted before TopicValueBase due to the OneToMany relationship in TopicValueBase
+     * 6. Paragraph, Block, Line, PageKeywordDistribution before the page itself due to the relationships in Page
+     * 7. Metadata is deleted last
+     *
+     * @param documentId The ID of the document whose annotations should be deleted
+     * @throws DatabaseOperationException
+     */
+    public void deleteDocumentAnnotations(long documentId) throws DatabaseOperationException {
+        executeOperationSafely((session) -> {
+            // 1. feelings
+            try {
+                session.createNativeQuery("DELETE FROM feeling WHERE emotion_id IN (SELECT id FROM emotion WHERE document_id = :docId)")
+                       .setParameter("docId", documentId)
+                       .executeUpdate();
+            } catch (Exception e) {
+            }
+
+            // 2. CompleteNegation children
+            String[] step2 = {"focus", "event", "scope", "xscope", "cue"};
+
+            // 3. TopicWord before TopicValueBase
+            String[] step3 = {"topicword"};
+
+            // 4. Main annotations
+            String[] step4 = {
+                "sentence", "namedentity", "emotion", "sentiment", "geoname",
+                "lemma", "time", "completenegation",
+                "biofidtaxon", "gazetteertaxon", "gnfindertaxon",
+                "wikipedialink", "unifiedtopic", "srlink", "topicvaluebase", "image"
+            };
+
+            // 5. Page-related deletion
+            String[] step5 = {"paragraph", "block", "line"};
+
+            // pagekeyworddistribution has no document_id, just page_id => needs different deletion method
+            String[] pageOnlyTables = {"pagekeyworddistribution"};
+
+            // 6. the page itself
+            String[] step6 = {"page"};
+
+            // 7. document metadata
+            String[] step7 = {
+                "sentencetopics", "documenttopicsraw", "documenttopicwords",
+                "documentchunkembeddings", "documentsentenceembeddings", "documentembeddings",
+                "documentkeyworddistribution", "documenttopthreetopics", "ucemetadata"
+            };
+
+            // delete any tables with just page_id before the actual pages get deleted
+            for (String table : pageOnlyTables) {
+                deleteFromTableUsingPageID(session, table, documentId);
+            }
+
+            for (String[] tables : new String[][]{step2, step3, step4, step5, step6, step7}) {
+                for (String table : tables) {
+                    deleteFromTable(session, table, documentId);
+                }
+            }
+            return null;
+        });
+    }
+
+    /**
+     * Deletes rows from a table where document_id matches the provided ID.
+     *
+     * @param session    The Hibernate session
+     * @param table      The table name to delete from
+     * @param documentId The document ID to match against
+     */
+    private void deleteFromTable(Session session, String table, long documentId) {
+        try {
+            session.createNativeQuery("DELETE FROM " + table + " WHERE document_id = :docId")
+                   .setParameter("docId", documentId)
+                   .executeUpdate();
+        } catch (Exception e) {
+            System.out.println(e.toString());
+        }
+    }
+
+    /**
+     * Deletes rows from a table that has a page_id column instead of document_id.
+     *
+     * @param session    The Hibernate session
+     * @param table      The table name to delete from
+     * @param documentId The document ID used to find related pages
+     */
+    private void deleteFromTableUsingPageID(Session session, String table, long documentId) {
+        try {
+            session.createNativeQuery("DELETE FROM " + table + " WHERE page_id IN (SELECT id FROM page WHERE document_id = :docId)")
+                   .setParameter("docId", documentId)
+                   .executeUpdate();
+        } catch (Exception e) {
+            System.out.println(e.toString());
+        }
+    }
+
     public void saveUceLog(UCELog log) throws DatabaseOperationException {
         executeOperationSafely((session) -> {
             session.saveOrUpdate(log);

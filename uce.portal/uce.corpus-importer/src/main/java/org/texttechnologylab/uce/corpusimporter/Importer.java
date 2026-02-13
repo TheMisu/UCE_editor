@@ -671,6 +671,206 @@ public class Importer {
     }
 
     /**
+     * Updates an existing document's annotations with post-edit analysis results.
+     * This method:
+     * 1. Gets the existing document from the DB
+     * 2. Clears its old annotations
+     * 3. Extracts new annotations from the provided JCas
+     * 4. Updates the document in DB
+     *
+     * @param jCas          The JCas containing the reanalyzed annotations
+     * @param documentId    The ID of the document to update
+     * @param corpusId      The ID of the document's corpus
+     * @return Updated document, or null if operation failed
+     * @throws DatabaseOperationException
+     */
+    public Document updateDocumentInDB(JCas jCas, String documentId, long corpusId)
+            throws DatabaseOperationException {
+
+        logger.info("Updating document: {} in corpus {}", documentId, corpusId);
+
+        try {
+            // get the existing document
+            var existingDoc = db.getDocumentByCorpusAndDocumentId(corpusId, documentId);
+            if (existingDoc == null) {
+                logger.error("Document {} not found in corpus {}", documentId, corpusId);
+                return null;
+            }
+
+            // get the document's corpus
+            var corpus = db.getCorpusById(corpusId);
+            if (corpus == null) {
+                logger.error("Corpus {} not found", corpusId);
+                return null;
+            }
+
+            // delete all old annotations from the DB
+            db.deleteDocumentAnnotations(existingDoc.getId());
+
+            // clear old annotations from the in-memory document object
+            clearDocumentAnnotations(existingDoc);
+
+            // extract new annotations from JCas using the existing extraction logic
+            var corpusConfig = gson.fromJson(corpus.getCorpusJsonConfig(), CorpusConfig.class);
+
+            // set the document's text
+            existingDoc.setFullText(jCas.getDocumentText());
+
+            // create the document's synthetic pages
+            String newText = jCas.getDocumentText();
+            int pageSize = 7500;
+            int pageNumber = 1;
+            var newPages = new ArrayList<Page>();
+
+            for (int i = 0; i < newText.length(); i += pageSize) {
+                int pageEnd = Math.min(i + pageSize, newText.length());
+                var page = new Page(i, pageEnd, pageNumber, "");
+                page.setCoveredText(newText.substring(i, pageEnd));
+                page.setDocument(existingDoc);
+                page.setParagraphs(new ArrayList<>());
+                pageNumber++;
+                newPages.add(page);
+            }
+            existingDoc.setPages(newPages);
+            logger.info("Recreated {} synthetic pages for updated document", newPages.size());
+
+            // extract all annotations
+            ExceptionUtils.tryCatchLog(
+                () -> setSentences(existingDoc, jCas),
+                (ex) -> logger.warn("Failed to set sentences", ex));
+
+            if (corpusConfig.getAnnotations().isNamedEntity())
+                ExceptionUtils.tryCatchLog(
+                    () -> setNamedEntities(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set named entities", ex));
+
+            if (corpusConfig.getAnnotations().isEmotion())
+                ExceptionUtils.tryCatchLog(
+                    () -> setEmotions(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set emotions", ex));
+
+            if (corpusConfig.getAnnotations().isSentiment())
+                ExceptionUtils.tryCatchLog(
+                    () -> setSentiments(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set sentiments", ex));
+
+            if (corpusConfig.getAnnotations().isGeoNames())
+                ExceptionUtils.tryCatchLog(
+                    () -> setGeoNames(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set geonames", ex));
+
+            if (corpusConfig.getAnnotations().isUceMetadata())
+                ExceptionUtils.tryCatchLog(
+                    () -> setUceMetadata(existingDoc, jCas, corpusId),
+                    (ex) -> logger.warn("Failed to set UCE metadata", ex));
+
+            if (corpusConfig.getAnnotations().isCompleteNegation())
+                ExceptionUtils.tryCatchLog(
+                    () -> setCompleteNegations(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set negations", ex));
+
+            if (corpusConfig.getAnnotations().isLemma())
+                ExceptionUtils.tryCatchLog(
+                    () -> setLemmata(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set lemmas", ex));
+
+            if (corpusConfig.getAnnotations().isSrLink())
+                ExceptionUtils.tryCatchLog(
+                    () -> setSemanticRoleLabels(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set SR links", ex));
+
+            if (corpusConfig.getAnnotations().isTime())
+                ExceptionUtils.tryCatchLog(
+                    () -> setTimes(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set times", ex));
+
+            if (corpusConfig.getAnnotations().getTaxon().isAnnotated())
+                ExceptionUtils.tryCatchLog(
+                    () -> setTaxonomy(existingDoc, jCas, corpusConfig),
+                    (ex) -> logger.warn("Failed to set taxa", ex));
+
+            if (corpusConfig.getAnnotations().isWikipediaLink())
+                ExceptionUtils.tryCatchLog(
+                    () -> setWikiLinks(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set wikipedia links", ex));
+
+            if (corpusConfig.getAnnotations().isUnifiedTopic())
+                ExceptionUtils.tryCatchLog(
+                    () -> setUnifiedTopic(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set unified topics", ex));
+
+            if (corpusConfig.getAnnotations().isLogicalLinks())
+                ExceptionUtils.tryCatchLog(
+                    () -> setLogicLinks(existingDoc, jCas, corpusId, documentId),
+                    (ex) -> logger.warn("Failed to set logic links", ex));
+
+            if (corpusConfig.getAnnotations().isImage())
+                ExceptionUtils.tryCatchLog(
+                    () -> setImages(existingDoc, jCas),
+                    (ex) -> logger.warn("Failed to set images", ex));
+
+            // assign annotations to their correct pages
+            var docPages = existingDoc.getPages();
+            for (int i = 0; i < docPages.size(); i++) {
+                var page = docPages.get(i);
+                boolean isLast = (i == docPages.size() - 1);
+                updateAnnotationsWithPageId(existingDoc, page, isLast);
+            }
+            logger.info("Assigned annotations to {} pages", docPages.size());
+
+            // update document's database entry
+            db.updateDocument(existingDoc);
+            logger.info("Successfully updated document {} in database", documentId);
+
+            return existingDoc;
+
+        } catch (DatabaseOperationException ex) {
+            logger.error("Database error while updating document {}", documentId, ex);
+            throw ex;
+        } catch (Exception ex) {
+            logger.error("Unexpected error while updating document {}", documentId, ex);
+            return null;
+        }
+    }
+
+    /**
+     * Clears all annotations from a document using empty lists.
+     * Used to prepare the document for new annotations post-edit
+     *
+     * @param document The document to remove annotations from
+     */
+    private void clearDocumentAnnotations(Document document) {
+        logger.info("Clearing annotations from document {}", document.getDocumentId());
+
+        // clear all annotation lists
+        document.setSentences(new ArrayList<>());
+        document.setNamedEntities(new ArrayList<>());
+        document.setEmotions(new ArrayList<>());
+        document.setSentiments(new ArrayList<>());
+        document.setGeoNames(new ArrayList<>());
+        document.setCues(new ArrayList<>());
+        document.setEvents(new ArrayList<>());
+        document.setFocuses(new ArrayList<>());
+        document.setScopes(new ArrayList<>());
+        document.setXscopes(new ArrayList<>());
+        document.setLemmas(new ArrayList<>());
+        document.setTimes(new ArrayList<>());
+        document.setCompleteNegations(new ArrayList<>());
+        document.setSrLinks(new ArrayList<>());
+        document.setWikipediaLinks(new ArrayList<>());
+        document.setUnifiedTopics(new ArrayList<>());
+        document.setImages(new ArrayList<>());
+
+        // clear taxon lists
+        document.setGazetteerTaxons(new ArrayList<>());
+        document.setGnFinderTaxons(new ArrayList<>());
+        document.setBiofidTaxons(new ArrayList<>());
+
+        // clear pages
+        document.setPages(new ArrayList<>());
+    }
+
+    /**
      * Selects and sets the emotions of a document
      */
     private void setEmotions(Document document, JCas jCas) {

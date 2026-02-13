@@ -121,6 +121,8 @@
             <div class="w-100">
                 <div class="position-relative reader-container container"
                      data-id="${document.getId()?string?replace('.', '')?replace(',', '')}"
+                     data-corpus-id="${document.getCorpusId()?string?replace('.', '')?replace(',', '')}"
+                     data-document-id="${document.getDocumentId()!''}"
                      data-pagescount="${document.getPages()?size?string?replace('.', '')?replace(',', '')}" data-searchtokens="${(searchTokens)!''}">
 
                     <!-- Topic navigation buttons (hidden by default) -->
