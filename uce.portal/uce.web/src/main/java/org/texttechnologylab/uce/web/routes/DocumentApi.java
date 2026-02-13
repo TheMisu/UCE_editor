@@ -8,16 +8,22 @@ import io.javalin.http.Context;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.uima.jcas.JCas;
 import org.springframework.context.ApplicationContext;
+import org.texttechnologylab.uce.analysis.RunDUUIPipeline;
 import org.texttechnologylab.uce.common.config.CorpusConfig;
 import org.texttechnologylab.uce.common.exceptions.DatabaseOperationException;
 import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.authentication.UceUser;
+import org.texttechnologylab.uce.common.models.corpus.Document;
 import org.texttechnologylab.uce.common.models.corpus.UCEMetadataValueType;
+import org.texttechnologylab.uce.common.models.dto.ReanalysisRequestDto;
+import org.texttechnologylab.uce.common.models.dto.ReanalysisResponseDto;
 import org.texttechnologylab.uce.common.models.search.SearchType;
 import org.texttechnologylab.uce.common.services.PostgresqlDataInterface_Impl;
 import org.texttechnologylab.uce.common.services.S3StorageService;
+import org.texttechnologylab.uce.corpusimporter.Importer;
 import org.texttechnologylab.uce.search.SearchState;
 import org.texttechnologylab.uce.web.LanguageResources;
 import org.texttechnologylab.uce.web.SessionManager;
@@ -48,6 +54,7 @@ import org.texttechnologylab.uce.common.security.DocumentAccessManager;
 public class DocumentApi implements UceApi {
     private S3StorageService s3StorageService;
     private PostgresqlDataInterface_Impl db;
+    private ApplicationContext serviceContext;
     private static final Logger logger = LogManager.getLogger(DocumentApi.class);
     private Configuration freemarkerConfig;
 
@@ -55,6 +62,7 @@ public class DocumentApi implements UceApi {
     private final RendererRegistry rendererRegistry;
 
     public DocumentApi(ApplicationContext serviceContext, Configuration freemarkerConfig) {
+        this.serviceContext = serviceContext;
         this.db = serviceContext.getBean(PostgresqlDataInterface_Impl.class);
         this.s3StorageService = serviceContext.getBean(S3StorageService.class);
         this.freemarkerConfig = freemarkerConfig;
@@ -816,4 +824,92 @@ public class DocumentApi implements UceApi {
         }
     }
 
+    /**
+     * Reanalyzes an edited document's text using NLP and updates its database entry.
+     *
+     * @param ctx The Javalin Context containing the request
+     */
+    public void reanalyzeDocument(Context ctx) {
+        var gson = new Gson();
+
+        try {
+            // parse the request
+            var request = gson.fromJson(ctx.body(), ReanalysisRequestDto.class);
+
+            logger.info("Reanalyzing document {} in corpus {}", request.getDocumentId(), request.getCorpusId());
+
+
+            var modelGroups = request.getSelectedModels();
+            if (modelGroups == null) {
+                modelGroups = new ArrayList<>();
+            }
+            if (modelGroups.isEmpty()) {
+                logger.warn("No models specified for reanalysis. Running with empty model list");
+            }
+
+            logger.info("Using {} model groups for reanalysis: {}", modelGroups.size(), modelGroups);
+
+            // run the NLP pipeline
+            var pipeline = new RunDUUIPipeline();
+            JCas reanalyzedJCas = pipeline.reanalyzeText(
+                modelGroups,
+                request.getEditedText(),
+                request.getLanguage(),
+                request.getInputClaim(),
+                request.getInputCoherence(),
+                request.getInputStance(),
+                request.getInputLLM()
+            );
+
+            if (reanalyzedJCas == null) {
+                ctx.status(500);
+                ctx.json(ReanalysisResponseDto.error(
+                    "Pipeline analysis failed",
+                    "RunDUUIPipeline returned null"));
+                return;
+            }
+
+            logger.info("Pipeline analysis completed successfully");
+
+            // update the document in database
+            var importer = new Importer(serviceContext);
+            Document updatedDoc = importer.updateDocumentInDB(
+                reanalyzedJCas,
+                request.getDocumentId(),
+                request.getCorpusId()
+            );
+
+            if (updatedDoc == null) {
+                ctx.status(500);
+                ctx.json(ReanalysisResponseDto.error(
+                    "Failed to update document in database",
+                    "Importer.updateExistingDocument returned null"));
+                return;
+            }
+
+            logger.info("Document {} updated successfully in database", request.getDocumentId());
+
+            // return a success response
+            ctx.status(200);
+            ctx.json(ReanalysisResponseDto.success(
+                request.getDocumentId(),
+                request.getCorpusId(),
+                modelGroups
+            ));
+
+        } catch (DatabaseOperationException ex) {
+            logger.error("Database error during document reanalysis", ex);
+            ctx.status(500);
+            ctx.json(ReanalysisResponseDto.error(
+                "Database operation failed",
+                ex.getMessage()));
+
+        } catch (Exception ex) {
+            logger.error("Error during document reanalysis: " + ctx.body(), ex);
+            ctx.status(500);
+            ctx.json(ReanalysisResponseDto.error(
+                "Reanalysis failed",
+                ex.getMessage()));
+        }
+    }
 }

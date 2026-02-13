@@ -235,6 +235,169 @@ public class RunDUUIPipeline {
         return duuiInformation;
     }
 
+    /**
+     * Sends text to the NLP pipeline and returns a JCas containing all annotations and analysis results.
+     *
+     * @param modelGroups   List of model identifiers to run. Can be an empty list if no specials models are needed
+     * @param inputText     The text to analyze
+     * @param language      Optional language code (will be auto-detected if not specified)
+     * @param claim         Optional claim text for fact-checking models. Required if using fact-checing
+     * @param coherenceText Optional coherence reference text. Required if using coherence models
+     * @param stanceText    Optional stance hypothesis text. Required if using stance models
+     * @param systemPrompt  Optional system prompt for LLM models. Required if using LLMs
+     * @return Annotated JCas with all model outputs
+     */
+    public JCas reanalyzeText(List<String> modelGroups, String inputText, String language,
+                              String claim, String coherenceText, String stanceText, String systemPrompt) throws Exception {
+        ModelResources modelResources = new ModelResources();
+        modelResources.getGroupedModelObjects();
+        HashMap<String, ModelInfo> modelInfos = modelResources.getGroupMap();
+        HashMap<String, ModelInfo> modelInfosMap = new HashMap<>();
+        List<String> ttlabScorerGroups = new ArrayList<>();
+        List<String> cohmetrixScorerGroups = new ArrayList<>();
+        boolean specialModel = false;
+        boolean isFact = false;
+        boolean isCoherence = false;
+        boolean isStance = false;
+        boolean isLLM = false;
+        boolean isTtlabScorer = false;
+        boolean isCohmetrix = false;
+
+        TTLabScorerInfo ttlabModelInfo = new TTLabScorerInfo();
+        List<String> ttlabModelGroupNames = new ArrayList<>();
+        List<String> cohmetrixGroups = new ArrayList<>();
+        LinkedHashMap<String, LinkedHashMap<String, String>> taNameMap = ttlabModelInfo.getTAMapNames();
+        LinkedHashMap<String, String> ttlabSubModels = taNameMap.get("submodels");
+        LinkedHashMap<String, String> ttlabProperties = taNameMap.get("properties");
+        CohMetrixInfo cohmetrixModelInfo = new CohMetrixInfo();
+        LinkedHashMap<String, LinkedHashMap<String, String>> cohmetrixNameMap = cohmetrixModelInfo.getCohMetrixMapInfo();
+        LinkedHashMap<String, String> cohmetrixModels = cohmetrixNameMap.get("Models");
+
+        // process the model groups using the same logic as getModelResources
+        for (String modelKey : modelGroups) {
+            if (modelInfos.containsKey(modelKey)) {
+                ModelInfo modelInfo = modelInfos.get(modelKey);
+                String Variant = modelInfo.getVariant();
+                modelInfosMap.put(modelKey, modelInfo);
+                switch (Variant) {
+                    case "Factchecking":
+                        isFact = true;
+                        specialModel = true;
+                        break;
+                    case "Coherence":
+                        isCoherence = true;
+                        specialModel = true;
+                        break;
+                    case "Stance":
+                        isStance = true;
+                        specialModel = true;
+                        break;
+                    case "LLM":
+                        specialModel = true;
+                        isLLM = true;
+                        break;
+                }
+            }
+            if (modelKey.startsWith("ttlabscorer##")) {
+                String property = modelKey.replace("ttlabscorer##", "");
+                ttlabScorerGroups.add(property);
+                String ttlabModelGroupName = ttlabProperties.get(property);
+                String ttlabSubModelName = ttlabSubModels.get(ttlabModelGroupName);
+                if (!ttlabModelGroupNames.contains(ttlabSubModelName)) {
+                    ttlabModelGroupNames.add(ttlabSubModelName);
+                    ModelInfo ttlabmodelInfo = ttlabModelInfo.getModelInfo();
+                    ttlabmodelInfo.setName(ttlabSubModelName);
+                    ttlabmodelInfo.setMainTool("TTLAB Scorer");
+                    ttlabmodelInfo.setKey(ttlabSubModelName);
+                    String modelKeyName = ttlabmodelInfo.getMainTool().replace(" ", "_") + "_" + ttlabmodelInfo.getKey().replace(" ", "_");
+                    modelInfosMap.put(modelKeyName, ttlabmodelInfo);
+                }
+                isTtlabScorer = true;
+            }
+            if (modelKey.startsWith("cohmetrix##")) {
+                String labelName = modelKey.replace("cohmetrix##", "");
+                cohmetrixScorerGroups.add(labelName);
+                String cohmetrixModelGroupName = cohmetrixModels.get(labelName);
+                if (!cohmetrixGroups.contains(cohmetrixModelGroupName)) {
+                    cohmetrixGroups.add(cohmetrixModelGroupName);
+                    ModelInfo cohmetrixmodel = cohmetrixModelInfo.getModelInfo();
+                    cohmetrixmodel.setName(cohmetrixModelGroupName);
+                    cohmetrixmodel.setMainTool("CohMetrix");
+                    cohmetrixmodel.setKey(cohmetrixModelGroupName);
+                    String modelKeyName = cohmetrixmodel.getMainTool().replace(" ", "_") + "_" + cohmetrixmodel.getKey().replace(" ", "_");
+                    modelInfosMap.put(modelKeyName, cohmetrixmodel);
+                }
+                isCohmetrix = true;
+            }
+        }
+
+        DUUIPipeline pipeline = new DUUIPipeline();
+
+        // create a JCas with provided language or use language detection
+        JCas cas;
+        if (language != null && !language.isBlank()) {
+            cas = JCasFactory.createJCas();
+            cas.setDocumentText(inputText);
+            cas.setDocumentLanguage(language);
+            cas = pipeline.getSentences(cas);
+        } else {
+            cas = pipeline.getLanguage(inputText);
+            cas = pipeline.getSentences(cas);
+        }
+
+        // handle special models
+        if (specialModel) {
+            JCas newCas = JCasFactory.createJCas();
+            String detectedLanguage = cas.getDocumentLanguage();
+            newCas.setDocumentLanguage(detectedLanguage);
+            String text = cas.getDocumentText();
+            StringBuilder sb = new StringBuilder();
+            sb.append(text).append(" ");
+
+            // copy sentences to new CAS
+            Collection<Sentence> allSentences = JCasUtil.select(cas, Sentence.class);
+            for (Sentence sentence : allSentences) {
+                int begin = sentence.getBegin();
+                int end = sentence.getEnd();
+                Sentence newSentence = new Sentence(newCas);
+                newSentence.setBegin(begin);
+                newSentence.setEnd(end);
+                newSentence.addToIndexes();
+            }
+
+            if (isFact && claim != null) {
+                Object[] output_fact = pipeline.setClaimFact(newCas, claim, sb);
+                newCas = (JCas) output_fact[0];
+                sb = (StringBuilder) output_fact[1];
+            }
+            if (isCoherence && coherenceText != null) {
+                Object[] output_coherence = pipeline.setSentenceComparisons(newCas, coherenceText, sb);
+                newCas = (JCas) output_coherence[0];
+                sb = (StringBuilder) output_coherence[1];
+            }
+            if (isStance && stanceText != null) {
+                Object[] output_stance = pipeline.setStance(newCas, stanceText, sb);
+                newCas = (JCas) output_stance[0];
+                sb = (StringBuilder) output_stance[1];
+            }
+            if (isLLM && systemPrompt != null) {
+                Object[] output_llm = pipeline.setPrompt(newCas, systemPrompt, sb);
+                newCas = (JCas) output_llm[0];
+                sb = (StringBuilder) output_llm[1];
+            }
+
+            text = sb.toString();
+            newCas.setDocumentText(text);
+            cas = newCas;
+        }
+
+        // run the pipeline
+        DUUIComposer composer = pipeline.setComposer(modelInfosMap);
+        JCas result = pipeline.runPipeline(cas, composer);
+
+        return result;
+    }
+
     public static void main(String[] args) throws Exception {
         ModelResources modelResources = new ModelResources();
         List<ModelGroup> modelGroups = modelResources.getGroupedModelObjects();

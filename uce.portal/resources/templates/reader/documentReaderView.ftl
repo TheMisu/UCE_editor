@@ -176,6 +176,8 @@
                 <div class="w-100">
                     <div class="position-relative reader-container container"
                         data-id="${document.getId()?string?replace('.', '')?replace(',', '')}"
+                        data-corpus-id="${document.getCorpusId()?string?replace('.', '')?replace(',', '')}"
+                        data-document-id="${document.getDocumentId()!''}"
                         data-pagescount="${document.getPages()?size?string?replace('.', '')?replace(',', '')}" data-searchtokens="${(searchTokens)!''}">
 
                         <!-- Topic navigation buttons (hidden by default) -->
@@ -309,6 +311,9 @@
                                     </button>
                                     <button class="btn toggle-highlighting-btn" data-highlighted="true">
                                         <i class="fas fa-highlighter mr-2"></i> Toggle Highlighting
+                                    </button>
+                                    <button class="btn edit-document-btn">
+                                        <i class="fas fa-edit mr-2"></i> Edit Document
                                     </button>
                                     <#if casDownloadName?has_content && casDownloadName != "">
                                         <a href="/api/ie/download/uima?objectName=${casDownloadName}" class="btn">
@@ -473,5 +478,6 @@
     })();
 </script>
 
+<script type="module" src="/js/dist/tiptap-bundle.js"></script>
 </body>
 </html>

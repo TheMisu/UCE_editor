@@ -394,6 +394,12 @@ public interface DataInterface {
     public void updateDocument(Document document) throws DatabaseOperationException, DocumentAccessDeniedException;
 
     /**
+     * Deletes all annotations for a document from the database.
+     * Used for deleting (old) annotations that are no longer relevant to the edited document post reanalysis
+     */
+    public void deleteDocumentAnnotations(long documentId) throws DatabaseOperationException, DocumentAccessDeniedException;
+
+    /**
      * Saves a UCELog to the database. In those, we log requests from the user and more.
      *
      * @param log

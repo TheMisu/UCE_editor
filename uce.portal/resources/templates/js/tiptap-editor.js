@@ -20,7 +20,7 @@ export class TipTapEditor {
      * Creates the editor UI
      *
      * The editor contains:
-     *   - toolbar with Bold/Italic (prob not needed) and Save buttons
+     *   - toolbar with Save button
      *   - text editing area
      */
     initContainer() {
@@ -28,8 +28,6 @@ export class TipTapEditor {
         this.editorContainer.className = 'tiptap-editor-container';
         this.editorContainer.innerHTML =
             `<div class="tiptap-toolbar">
-                <button data-action="bold"><i class="fas fa-bold"></i></button>
-                <button data-action="italic"><i class="fas fa-italic"></i></button>
                 <button data-action="save" class="ml-auto btn btn-primary">Save</button>
                 <button data-action="close"><i class="fas fa-times"></i></button>
             </div>
@@ -59,12 +57,6 @@ export class TipTapEditor {
             if (action) {
                 e.preventDefault();
                 switch (action) {
-                    case 'bold':
-                        this.editor.chain().focus().toggleBold().run();
-                        break;
-                    case 'italic':
-                        this.editor.chain().focus().toggleItalic().run();
-                        break;
                     case 'save':
                         this.saveContent();
                         break;
@@ -170,48 +162,64 @@ export class TipTapEditor {
         this.editorContainer.style.display = 'block';
     }
 
-    /* Saves the content from the editor back into the original document structure.
-    * It intelligently updates, adds, or removes paragraphs as needed.
-    */
-    saveContent() {
-        const documentContent = document.querySelector('.document-content');
-        if (documentContent && this.editor) {
-            const newContentHTML = this.editor.getHTML();
-            const temp = document.createElement('div');
-            temp.innerHTML = newContentHTML;
-            const newParagraphs = Array.from(temp.querySelectorAll('p'));
+    /**
+     * Sends the edited text to the reanalysis pipeline and refreshes the page
+     * after the document is updated in the database
+     */
+    async saveContent() {
+        // get edited text content
+        const editedText = this.editor.getText();
 
-            const oldParagraphs = Array.from(documentContent.querySelectorAll('.page-content .paragraph'));
-            const pageContents = documentContent.querySelectorAll('.page-content');
-
-            const oldParagraphsCount = oldParagraphs.length;
-            const newParagraphsCount = newParagraphs.length;
-
-            // Update existing paragraphs with the new content.
-            const minCount = Math.min(oldParagraphsCount, newParagraphsCount);
-            for (let i = 0; i < minCount; i++) {
-                oldParagraphs[i].innerHTML = newParagraphs[i].innerHTML;
-            }
-
-            if (newParagraphsCount > oldParagraphsCount) {
-                // If there are new paragraphs, add them to the last page.
-                const lastPage = pageContents.length > 0 ? pageContents[pageContents.length - 1] : null;
-                if (lastPage) {
-                    for (let i = oldParagraphsCount; i < newParagraphsCount; i++) {
-                        const paraDiv = document.createElement('div');
-                        paraDiv.className = 'paragraph';
-                        paraDiv.innerHTML = newParagraphs[i].innerHTML;
-                        lastPage.appendChild(paraDiv);
-                    }
-                }
-            } else if (newParagraphsCount < oldParagraphsCount) {
-                // If paragraphs were removed, delete the extra ones from the DOM.
-                for (let i = newParagraphsCount; i < oldParagraphsCount; i++) {
-                    oldParagraphs[i].remove();
-                }
-            }
+        // get corpus and document ID from page
+        const readerContainer = document.querySelector('.reader-container');
+        let corpusId = null;
+        let documentId = null;
+        if (readerContainer) {
+            corpusId = parseInt(readerContainer.dataset.corpusId, 10);
+            documentId = readerContainer.dataset.documentId;
         }
-        this.closeEditor();
+
+        // show spinning animation during processing
+        const saveBtn = this.editorContainer.querySelector('[data-action="save"]');
+        const originalBtnText = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+        try {
+            // send to backend for reanalysis
+            const response = await fetch('/api/document/reanalyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    documentId: documentId,
+                    corpusId: corpusId,
+                    editedText: editedText,
+                    language: "de", // hardcoded bc the language detection service stopped working
+                    useOriginalModels: true,
+                    updateXmi: true
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Reanalysis failed');
+            }
+
+            console.log('Document reanalyzed successfully:', result);
+            alert('Document saved and reanalyzed successfully!');
+            window.location.reload();
+
+        } catch (error) {
+            console.error('Error saving document:', error);
+            alert('Failed to save document: ' + error.message);
+        } finally {
+            // restore button state
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalBtnText;
+        }
     }
 
     /**

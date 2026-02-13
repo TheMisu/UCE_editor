@@ -88,86 +88,86 @@ public class Document extends ModelBase implements WikiModel, Linkable {
     @Setter
     @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     @Fetch(value = FetchMode.SUBSELECT)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<Page> pages;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<Sentence> sentences;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<NamedEntity> namedEntities;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<GeoName> geoNames;
 
     @Setter
     @Getter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<Sentiment> sentiments;
 
     @Setter
     @Getter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<Emotion> emotions;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<Lemma> lemmas;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<SrLink> srLinks;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<Time> times;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<GazetteerTaxon> gazetteerTaxons;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<GnFinderTaxon> gnFinderTaxons;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<BiofidTaxon> biofidTaxons;
 
     @Setter
     @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     @BatchSize(size = 50)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     @Filter(name = "valueTypeFilter", condition = "valueType != 2")
     private List<UCEMetadata> uceMetadata;
 
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<WikipediaLink> wikipediaLinks;
 
     @Getter
@@ -232,7 +232,7 @@ public class Document extends ModelBase implements WikiModel, Linkable {
     @Getter
     @Setter
     @OneToMany(cascade = CascadeType.ALL)
-    @JoinColumn(name = "document_Id")
+    @JoinColumn(name = "document_id")
     private List<Image> images;
 
     @Getter
