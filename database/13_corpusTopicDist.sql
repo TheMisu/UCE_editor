@@ -1,4 +1,8 @@
-CREATE OR REPLACE FUNCTION get_normalized_topic_scores(corpusid BIGINT)
+CREATE OR REPLACE FUNCTION get_normalized_topic_scores(
+    corpusid BIGINT,
+    p_user_name text DEFAULT NULL,
+    p_min_level integer DEFAULT 1
+    )
 RETURNS TABLE(topic VARCHAR(255), normalized_score DOUBLE PRECISION) AS $$
 BEGIN
 RETURN QUERY
@@ -11,7 +15,9 @@ FROM (
              AVG(thetadt) AS avg_thetadt
          FROM documenttopicsraw
          WHERE document_id IN (
-             SELECT id FROM document WHERE document.corpusid = get_normalized_topic_scores.corpusid
+             SELECT id
+             FROM permitted_documents(get_normalized_topic_scores.p_user_name, get_normalized_topic_scores.p_min_level)
+             WHERE corpusid = get_normalized_topic_scores.corpusid
          )
          GROUP BY topiclabel
      ) subquery

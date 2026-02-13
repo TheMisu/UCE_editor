@@ -66,6 +66,6 @@ public class AnalysisRequestDto {
         return inputLLM;
     }
     public void setInputLLM(String inputSystemPrompt) {
-        this.inputLLM = inputLLM;
+        this.inputLLM = inputSystemPrompt;
     }
 }

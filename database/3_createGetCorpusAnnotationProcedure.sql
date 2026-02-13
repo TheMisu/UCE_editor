@@ -3,7 +3,9 @@
 CREATE OR REPLACE FUNCTION get_corpus_annotations(
     corpusid_val BIGINT, 
     take_count INTEGER, 
-    offset_count INTEGER
+    offset_count INTEGER,
+    p_user_name text DEFAULT NULL,
+    p_min_level integer DEFAULT 1
 )
 
 RETURNS TABLE (
@@ -21,7 +23,11 @@ BEGIN
             COUNT(*) AS amount,
             'time' AS type
         FROM time t
-        WHERE t.document_id IN (SELECT d.id FROM document d WHERE d.corpusid = corpusid_val)
+        WHERE t.document_id IN (
+            SELECT d.id
+            FROM permitted_documents(p_user_name, p_min_level) d
+            WHERE d.corpusid = corpusid_val
+        )
         GROUP BY t.coveredtext
     ),
 	
@@ -31,7 +37,11 @@ BEGIN
             COUNT(*) AS amount,
             n.typee AS type
         FROM namedentity n
-        WHERE n.document_id IN (SELECT d.id FROM document d WHERE d.corpusid = corpusid_val)
+        WHERE n.document_id IN (
+            SELECT d.id
+            FROM permitted_documents(p_user_name, p_min_level) d
+            WHERE d.corpusid = corpusid_val
+        )
         GROUP BY n.coveredtext, n.typee
     ),
 	
@@ -41,7 +51,11 @@ BEGIN
             COUNT(*) AS amount,
             'taxon' AS type
         FROM gazetteertaxon x
-        WHERE x.document_id IN (SELECT d.id FROM document d WHERE d.corpusid = corpusid_val)
+        WHERE x.document_id IN (
+            SELECT d.id
+            FROM permitted_documents(p_user_name, p_min_level) d
+            WHERE d.corpusid = corpusid_val
+        )
         GROUP BY x.coveredtext
 
         UNION ALL
@@ -51,7 +65,11 @@ BEGIN
             COUNT(*) AS amount,
             'taxon' AS type
         FROM gnfindertaxon x
-        WHERE x.document_id IN (SELECT d.id FROM document d WHERE d.corpusid = corpusid_val)
+        WHERE x.document_id IN (
+            SELECT d.id
+            FROM permitted_documents(p_user_name, p_min_level) d
+            WHERE d.corpusid = corpusid_val
+        )
         GROUP BY x.coveredtext
     ),
 

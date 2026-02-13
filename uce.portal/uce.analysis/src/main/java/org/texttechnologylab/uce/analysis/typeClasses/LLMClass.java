@@ -22,7 +22,7 @@ public class LLMClass {
         return modelName;
     }
     public void setModelName(String modelName) {
-        modelName = modelName;
+        this.modelName = modelName;
     }
     public String getResult() {
         return result;

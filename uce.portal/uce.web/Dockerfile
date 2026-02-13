@@ -16,7 +16,7 @@ WORKDIR /app/uce.portal
 # We are also building the target jar here; we only need uce.web
 RUN mvn clean install -DskipTests -pl uce.web -am
 
-FROM openjdk:21-jdk-slim
+FROM eclipse-temurin:21-jdk
 
 # Expose the port that your Spark application runs on
 EXPOSE 4567
@@ -25,6 +25,8 @@ COPY --from=builder /app/uce.portal/uce.web/target/webportal-jar-with-dependenci
 
 # Copy the resources that aren't bundled in the jar
 COPY ./uce.portal/resources /app/uce.portal/resources
+# Copy static assets used by the web app
+COPY ./uce.portal/uce.web/src/main/resources/public /app/uce.portal/uce.web/src/main/resources/public
 
 WORKDIR /app/uce.portal/uce.web/
 

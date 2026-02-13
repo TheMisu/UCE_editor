@@ -893,16 +893,16 @@
       "clientId": "uce-web",
       "name": "UCE Web Portal Client",
       "description": "This is the client of the UCE webportal to manage logins, users and all associated auth operations within the UCE webportal.",
-      "rootUrl": "http://localhost:4567",
+      "rootUrl": "http://localhost:8008",
       "adminUrl": "",
-      "baseUrl": "http://localhost:4567",
+      "baseUrl": "http://localhost:8008",
       "surrogateAuthRequired": false,
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
       "secret": "**********",
       "redirectUris": [
-        "http://localhost:4567/auth/*"
+        "http://localhost:8008/auth/*"
       ],
       "webOrigins": [
         "*"
@@ -926,7 +926,7 @@
         "standard.token.exchange.enabled": "false",
         "login_theme": "keycloak.v2",
         "frontchannel.logout.session.required": "true",
-        "post.logout.redirect.uris": "http://localhost:4567/auth/*",
+        "post.logout.redirect.uris": "http://localhost:8008/auth/*",
         "oauth2.device.authorization.grant.enabled": "false",
         "backchannel.logout.revoke.offline.tokens": "false",
         "use.refresh.tokens": "true",
@@ -944,6 +944,22 @@
         "request.object.encryption.enc": "any",
         "token.response.type.bearer.lower-case": "false"
       },
+      "protocolMappers": [
+        {
+          "id": "2c0c6a1e-1d9d-4e51-9f9a-8f6cfce3f4f0",
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ],
       "authenticationFlowBindingOverrides": {},
       "fullScopeAllowed": true,
       "nodeReRegistrationTimeout": -1,

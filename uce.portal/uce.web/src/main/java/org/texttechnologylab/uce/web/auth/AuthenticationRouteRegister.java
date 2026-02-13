@@ -48,7 +48,7 @@ public class AuthenticationRouteRegister {
                     }
 
                     String path = auth.path();
-                    Handler wrappedRoute = originalRoute;
+                    Handler wrappedRoute = originalRoute;                    
 
                     if (auth.required() == Authentication.Requirement.LOGGED_IN) {
                         wrappedRoute = ctx -> {

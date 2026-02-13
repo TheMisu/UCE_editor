@@ -1,18 +1,41 @@
 package org.texttechnologylab.uce.common.models;
 
-import lombok.Getter;
-import lombok.Setter;
-import org.texttechnologylab.uce.common.models.corpus.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.UUID;
+
+import javax.persistence.Column;
+import javax.persistence.FetchType;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
+import javax.persistence.MappedSuperclass;
+
+import org.texttechnologylab.uce.common.models.corpus.GeoName;
+import org.texttechnologylab.uce.common.models.corpus.Image;
+import org.texttechnologylab.uce.common.models.corpus.Lemma;
+import org.texttechnologylab.uce.common.models.corpus.NamedEntity;
+import org.texttechnologylab.uce.common.models.corpus.Page;
+import org.texttechnologylab.uce.common.models.corpus.Sentiment;
+import org.texttechnologylab.uce.common.models.corpus.Taxon;
+import org.texttechnologylab.uce.common.models.corpus.Time;
+import org.texttechnologylab.uce.common.models.corpus.WikipediaLink;
 import org.texttechnologylab.uce.common.models.corpus.emotion.Emotion;
 import org.texttechnologylab.uce.common.models.corpus.links.AnnotationLink;
 import org.texttechnologylab.uce.common.models.corpus.links.AnnotationToDocumentLink;
 import org.texttechnologylab.uce.common.models.corpus.links.DocumentToAnnotationLink;
-import org.texttechnologylab.uce.common.models.negation.*;
+import org.texttechnologylab.uce.common.models.negation.Cue;
+import org.texttechnologylab.uce.common.models.negation.Event;
+import org.texttechnologylab.uce.common.models.negation.Focus;
+import org.texttechnologylab.uce.common.models.negation.Scope;
+import org.texttechnologylab.uce.common.models.negation.XScope;
 import org.texttechnologylab.uce.common.models.topic.UnifiedTopic;
 import org.texttechnologylab.uce.common.utils.StringUtils;
 
-import javax.persistence.*;
-import java.util.*;
+import lombok.Getter;
+import lombok.Setter;
 
 @MappedSuperclass
 public class UIMAAnnotation extends ModelBase implements Linkable {
@@ -329,84 +352,106 @@ public class UIMAAnnotation extends ModelBase implements Linkable {
     private String generateMultiHTMLTag(List<UIMAAnnotation> annotations) {
         var size = annotations.size();
 
-        if (size == 0) return "";
-        else if (size == 1) return generateHTMLTag(annotations.getFirst(), true);
-        else {
-            var btnsHtml = new StringBuilder();
-            for (var anno : annotations) {
-                btnsHtml.append(generateHTMLTag(anno, true)).append(anno.getClass().getSimpleName()).append("</span>");
+        switch (size) {
+            case 0 -> {
+                return "";
             }
-
-            return String.format("<span class='multi-annotation' title='%1$s'>" +
-                                 "<div class='multi-annotation-popup'>" +
-                                 btnsHtml.toString().replace("%", "%%") +
-                                 "</div><span class='ruby-text'>", UUID.randomUUID());
+            case 1 -> {
+                return generateHTMLTag(annotations.getFirst(), true);
+            }
+            default -> {
+                var btnsHtml = new StringBuilder();
+                for (var anno : annotations) {
+                    btnsHtml.append(generateHTMLTag(anno, true)).append(anno.getClass().getSimpleName()).append("</span>");
+                }
+                
+                return String.format("<span class='multi-annotation' title='%1$s'>" +
+                        "<div class='multi-annotation-popup'>" +
+                        btnsHtml.toString().replace("%", "%%") +
+                        "</div><span class='ruby-text'>", UUID.randomUUID());
+            }
         }
     }
 
     // Utility method to generate an HTML opening tag for an annotation
     private String generateHTMLTag(UIMAAnnotation annotation, boolean includeTitle) {
-        if (annotation instanceof NamedEntity ne) {
-            return String.format(
-                    "<span class='open-wiki-page annotation custom-context-menu ne-%1$s' title='%2$s' data-wid='%3$s' data-wcovered='%4$s'>",
-                    ne.getType(), includeTitle ? ne.getCoveredText() : "", ne.getWikiId(), ne.getCoveredText());
-        } else if (annotation instanceof GeoName geoName) {
-            return String.format(
-                    "<span class='open-wiki-page annotation custom-context-menu geoname' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
-                    includeTitle ? geoName.getName() : "", geoName.getWikiId(), geoName.getCoveredText());
-        } else if (annotation instanceof Time time) {
-            return String.format(
-                    "<span class='open-wiki-page annotation custom-context-menu time' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
-                    includeTitle ? time.getCoveredText() : "", time.getWikiId(), time.getCoveredText());
-        } else if (annotation instanceof WikipediaLink wikipediaLink) {
-            return String.format(
-                    "<span class='open-wiki-page annotation custom-context-menu wiki' title='%1$s'>",
-                    includeTitle ? wikipediaLink.getCoveredText() : "");
-        } else if (annotation instanceof Taxon taxon) {
-            return String.format(
-                    "<span class='open-wiki-page annotation custom-context-menu taxon' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
-                    includeTitle ? taxon.getCoveredText() : "", taxon.getWikiId(), taxon.getCoveredText());
-        } else if (annotation instanceof Lemma lemma) {
-            return String.format(
-                    "<span class='open-wiki-page annotation custom-context-menu lemma' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
-                    includeTitle ? lemma.getCoveredText() : "", lemma.getWikiId(), lemma.getCoveredText());
-        } else if (annotation instanceof Cue cue) {
-            return String.format(
-                    "<span class='open-wiki-page annotation custom-context-menu cue' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
-                    includeTitle ? cue.getCoveredText() : "", cue.getWikiId(), cue.getCoveredText());
-        } else if (annotation instanceof Event event) {
-            return String.format(
-                    "<span class='annotation custom-context-menu event' title='%1$s'>",
-                    includeTitle ? event.getCoveredText() : "");
-        } else if (annotation instanceof Scope scope) {
-            return String.format(
-                    "<span class='annotation custom-context-menu scope' title='%1$s'>",
-                    includeTitle ? scope.getCoveredText() : "");
-        } else if (annotation instanceof XScope xscope) {
-            return String.format(
-                    "<span class='annotation custom-context-menu xscope' title='%1$s'>",
-                    includeTitle ? xscope.getCoveredText() : "");
-        } else if (annotation instanceof Focus focus) {
-            return String.format(
-                    "<span class='annotation custom-context-menu focus' title='%1$s'>",
-                    includeTitle ? focus.getCoveredText() : "");
-        } else if (annotation instanceof Image image) {
-            return "<img width='" + image.getWidth() + "' height='" + image.getHeight() + "' src='" + image.getHTMLImgSrc() + "' /><br/>";
-        } else if (annotation instanceof UnifiedTopic topic) {
-            // Get the representative topic if available
-            String repTopicValue = "";
-            if (topic.getTopics() != null && !topic.getTopics().isEmpty()) {
-                var repTopic = topic.getRepresentativeTopic();
-                if (repTopic != null) {
-                    repTopicValue = repTopic.getValue();
-                }
+        switch (annotation) {
+            case NamedEntity ne -> {
+                return String.format(
+                        "<span class='open-wiki-page annotation custom-context-menu ne-%1$s' title='%2$s' data-wid='%3$s' data-wcovered='%4$s'>",
+                        ne.getType(), includeTitle ? ne.getCoveredText() : "", ne.getWikiId(), ne.getCoveredText());
             }
-
-            // Instead of wrapping the entire text, we'll just add a marker at the end
-            // The actual text will be rendered normally, and only the indicator will be clickable
-            return String.format(
-                    "<span class='open-wiki-page annotation custom-context-menu topic colorable-topic' title='%1$s' data-wid='%2$s' data-wcovered='%3$s' data-topic-value='%4$s'>",
-                    includeTitle ? repTopicValue : "", topic.getWikiId(), topic.getCoveredText(), repTopicValue);
+            case GeoName geoName -> {
+                return String.format(
+                        "<span class='open-wiki-page annotation custom-context-menu geoname' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
+                        includeTitle ? geoName.getName() : "", geoName.getWikiId(), geoName.getCoveredText());
+            }
+            case Time time -> {
+                return String.format(
+                        "<span class='open-wiki-page annotation custom-context-menu time' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
+                        includeTitle ? time.getCoveredText() : "", time.getWikiId(), time.getCoveredText());
+            }
+            case WikipediaLink wikipediaLink -> {
+                return String.format(
+                        "<span class='open-wiki-page annotation custom-context-menu wiki' title='%1$s'>",
+                        includeTitle ? wikipediaLink.getCoveredText() : "");
+            }
+            case Taxon taxon -> {
+                return String.format(
+                        "<span class='open-wiki-page annotation custom-context-menu taxon' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
+                        includeTitle ? taxon.getCoveredText() : "", taxon.getWikiId(), taxon.getCoveredText());
+            }
+            case Lemma lemma -> {
+                return String.format(
+                        "<span class='open-wiki-page annotation custom-context-menu lemma' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
+                        includeTitle ? lemma.getCoveredText() : "", lemma.getWikiId(), lemma.getCoveredText());
+            }
+            case Cue cue -> {
+                return String.format(
+                        "<span class='open-wiki-page annotation custom-context-menu cue' title='%1$s' data-wid='%2$s' data-wcovered='%3$s'>",
+                        includeTitle ? cue.getCoveredText() : "", cue.getWikiId(), cue.getCoveredText());
+            }
+            case Event event -> {
+                return String.format(
+                        "<span class='annotation custom-context-menu event' title='%1$s'>",
+                        includeTitle ? event.getCoveredText() : "");
+            }
+            case Scope scope -> {
+                return String.format(
+                        "<span class='annotation custom-context-menu scope' title='%1$s'>",
+                        includeTitle ? scope.getCoveredText() : "");
+            }
+            case XScope xscope -> {
+                return String.format(
+                        "<span class='annotation custom-context-menu xscope' title='%1$s'>",
+                        includeTitle ? xscope.getCoveredText() : "");
+            }
+            case Focus focus -> {
+                return String.format(
+                        "<span class='annotation custom-context-menu focus' title='%1$s'>",
+                        includeTitle ? focus.getCoveredText() : "");
+            }
+            case Image image -> {
+                return "<img class='document-reader-embedded-image' width='" + image.getWidth() + "' height='" + image.getHeight() + "' src='" + image.getHTMLImgSrc() + "' /><br/>";
+            }
+            case UnifiedTopic topic -> {
+                // Get the representative topic if available
+                String repTopicValue = "";
+                if (topic.getTopics() != null && !topic.getTopics().isEmpty()) {
+                    var repTopic = topic.getRepresentativeTopic();
+                    if (repTopic != null) {
+                        repTopicValue = repTopic.getValue();
+                    }
+                }
+                
+                // Instead of wrapping the entire text, we'll just add a marker at the end
+                // The actual text will be rendered normally, and only the indicator will be clickable
+                return String.format(
+                        "<span class='open-wiki-page annotation custom-context-menu topic colorable-topic' title='%1$s' data-wid='%2$s' data-wcovered='%3$s' data-topic-value='%4$s'>",
+                        includeTitle ? repTopicValue : "", topic.getWikiId(), topic.getCoveredText(), repTopicValue);
+            }
+            default -> {
+            }
         }
 
         return "";

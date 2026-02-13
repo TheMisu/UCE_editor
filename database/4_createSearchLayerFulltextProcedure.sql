@@ -11,6 +11,8 @@ CREATE OR REPLACE FUNCTION uce_search_layer_fulltext(
     IN useTsVector boolean DEFAULT true,
     IN source_table text DEFAULT 'page',
     IN schema_name text DEFAULT 'public',
+    IN p_user_name text DEFAULT NULL,
+    IN p_min_level integer DEFAULT 1,
     OUT total_count_out integer,
     OUT document_ids integer[],
     OUT named_entities_found text[][],
@@ -87,7 +89,7 @@ BEGIN
 								
 		-- If we dont search for any string, we dont need to fulltext search all documents
 		ranked_pages_cte := 'WITH limited_docs AS NOT MATERIALIZED (
-				SELECT id, documenttitle from document WHERE corpusid = $2 LIMIT 999
+				SELECT id, documenttitle FROM permitted_documents($13, $14) WHERE corpusid = $2 LIMIT 999
 			)
 			SELECT 
                 p.document_id AS doc_id, 
@@ -122,7 +124,7 @@ BEGIN
                 d.documenttitle
             FROM page p
             %s
-            JOIN document d ON d.id = p.document_id
+            JOIN permitted_documents($13, $14) d ON d.id = p.document_id
             WHERE (
                 ($4 IS NOT NULL AND $4 <> '''' AND p.textsearch @@ %s)
                 OR ($4 IS NULL OR $4 = '''')
@@ -166,7 +168,7 @@ BEGIN
                         )
 				    )
 				)
-			JOIN document d ON um.document_id = d.id AND d.corpusid = $2
+			JOIN permitted_documents($13, $14) d ON um.document_id = d.id AND d.corpusid = $2
 			%s
 			GROUP BY um.document_id
 			HAVING COUNT(ef.key) = (SELECT COUNT(*) FROM expanded_filters)
@@ -198,7 +200,7 @@ BEGIN
                 lp.rank,
                 JSONB_AGG((' || snippet_query || ')) AS snippets
             FROM limited_pages lp
-            JOIN document d ON d.id = lp.doc_id
+            JOIN permitted_documents($13, $14) d ON d.id = lp.doc_id
             GROUP BY d.id, lp.rank
             ORDER BY lp.rank DESC
         ),
@@ -231,7 +233,21 @@ BEGIN
     ', additional_join_1, ts_function, additional_join_2, ts_function, order_by_clause);
 
     EXECUTE query
-    USING uce_metadata_filters, corpus_id, useTsVector, input2, uce_metadata_filters, take_count, offset_count, count_all
+    USING 
+        uce_metadata_filters,  -- $1  : uce_metadata_filters
+        corpus_id,             -- $2  : corpus_id
+        NULL,                  -- $3  : placeholder (not used in query)
+        input2,                -- $4  : input2 / search string
+        uce_metadata_filters,  -- $5  : uce_metadata_filters (for filter checks)
+        take_count,            -- $6  : limit
+        offset_count,          -- $7  : offset
+        count_all,             -- $8  : return counts?
+        NULL,                  -- $9  : placeholder (not used in query)
+        NULL,                  -- $10 : placeholder (not used in query)
+        NULL,                  -- $11 : placeholder (not used in query)
+        NULL,                  -- $12 : placeholder (not used in query)
+        p_user_name,           -- $13 : principal for permitted_documents
+        p_min_level            -- $14 : min permission level
     INTO total_count_temp, document_ids_temp, document_ranks_temp, named_entities_temp, time_temp, taxons_temp, snippets_temp;
 
     total_count_out := total_count_temp;

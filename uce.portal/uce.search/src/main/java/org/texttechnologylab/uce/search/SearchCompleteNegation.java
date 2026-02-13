@@ -3,8 +3,10 @@ package org.texttechnologylab.uce.search;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.context.ApplicationContext;
+import org.texttechnologylab.models.authentication.DocumentPermission;
 import org.texttechnologylab.uce.common.config.CorpusConfig;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
+import org.texttechnologylab.uce.common.models.authentication.UceUser;
 import org.texttechnologylab.uce.common.models.dto.UCEMetadataFilterDto;
 import org.texttechnologylab.uce.common.models.search.DocumentSearchResult;
 import org.texttechnologylab.uce.common.models.search.SearchType;
@@ -115,7 +117,7 @@ public class SearchCompleteNegation implements Search {
      * @param countAll determines whether we also count all search hits or just using pagination
      * @return
      */
-    private DocumentSearchResult executeSearchOnDatabases(boolean countAll) {
+    private DocumentSearchResult executeSearchOnDatabases(boolean countAll, UceUser user) {
         return ExceptionUtils.tryCatchLog(
                 () -> db.completeNegationSearchForDocuments((searchState.getCurrentPage() - 1) * searchState.getTake(),
                         searchState.getTake(),
@@ -133,8 +135,8 @@ public class SearchCompleteNegation implements Search {
     }
 
     @Override
-    public SearchState initSearch() {
-        var documentSearchResult = executeSearchOnDatabases(true);
+    public SearchState initSearch(UceUser user) {
+        var documentSearchResult = executeSearchOnDatabases(true, user);
         if (documentSearchResult == null)
             throw new NullPointerException("CompleteNegation Init Search returned null - not empty.");
 
@@ -150,6 +152,9 @@ public class SearchCompleteNegation implements Search {
         searchState.setFoundScopes(documentSearchResult.getFoundScopes());
         searchState.setFoundXScopes(documentSearchResult.getFoundXscopes());
         searchState.setFoundEvents(documentSearchResult.getFoundEvents());
+
+        // Add user name for authentication
+        searchState.setSessionUser(user != null ? user.getUsername() : DocumentPermission.PUBLIC_USERNAME);
 
         ArrayList<String> allSearchTokens = new ArrayList<>();
         allSearchTokens.addAll(searchState.getCue());
@@ -177,10 +182,10 @@ public class SearchCompleteNegation implements Search {
     }
 
     @Override
-    public SearchState getSearchHitsForPage(int page) {
+    public SearchState getSearchHitsForPage(int page, UceUser user) {
         // Adjust the current page and execute the search again
         this.searchState.setCurrentPage(page);
-        var documentSearchResult = executeSearchOnDatabases(false);
+        var documentSearchResult = executeSearchOnDatabases(false, user);
         if (documentSearchResult == null)
             throw new NullPointerException("Neg Search returned NULL - not empty.");
         var documents = ExceptionUtils.tryCatchLog(

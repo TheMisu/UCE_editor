@@ -13,6 +13,7 @@ import org.texttechnologylab.uce.common.exceptions.DatabaseOperationException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.imp.ImportStatus;
 import org.texttechnologylab.uce.common.models.imp.UCEImport;
+import org.texttechnologylab.uce.common.security.DocumentAccessManager;
 import org.texttechnologylab.uce.common.services.PostgresqlDataInterface_Impl;
 import org.texttechnologylab.uce.common.utils.SystemStatus;
 
@@ -37,59 +38,71 @@ public class App {
         // Init DI
         var context = new AnnotationConfigApplicationContext(SpringConfig.class);
 
-        // Execute the external database scripts
-        var commonConfig = new CommonConfig();
-        logger.info("Executing external database scripts from " + commonConfig.getDatabaseScriptsLocation());
-        ExceptionUtils.tryCatchLog(
-                () -> SystemStatus.executeExternalDatabaseScripts(commonConfig.getDatabaseScriptsLocation(), context.getBean(PostgresqlDataInterface_Impl.class)),
-                (ex) -> logger.warn("Couldn't read the db scripts in the external database scripts folder; path wasn't found or other IO problems. ", ex));
-        logger.info("Finished with executing external database scripts.");
+        // Initialize access manager for document permission checks
+        logger.info("Initializing the Document Access Manager for the corpus importer...");
+        var accessManager = context.getBean(DocumentAccessManager.class);
 
-        // Read the import path from the CLI
-        var options = getOptions();
-        var parser = new DefaultParser();
-        var cmd = parser.parse(options, args);
+        try (var guard = accessManager.asAdmin()) {
+            logger.info("Initialized the Document Access Manager with ADMIN privileges for the importer.");
 
-        var importSrcPath = cmd.getOptionValue("importSrc");
-        var importDirPath = cmd.getOptionValue("importDir");
-        var importId = UUID.randomUUID().toString();
-        var importerNumber = Integer.parseInt(cmd.getOptionValue("importerNumber"));
-        var numThreadsStr = cmd.getOptionValue("numThreads");
-        var casView = cmd.getOptionValue("casView");
-        var numThreads = 1;
-        if (numThreadsStr != null) numThreads = Integer.parseInt(numThreadsStr);
-
-        if (importerNumber != 1) {
-            throw new InvalidParameterException("For now, the -importerNumber must always be 1, since this will be the only instance. Canceling.");
-        }
-
-        var importablePaths = new ArrayList<String>();
-        // If no parent directory was given, we simply import the single src path
-        if (importDirPath == null) importablePaths.add(importSrcPath);
-        else {
-            // Else, we want to check EACH folder in the parent directory and try to import them each.
-            var dir = new File(importDirPath);
-            for (var file : Objects.requireNonNull(dir.listFiles())) {
-                if (file.isDirectory()) importablePaths.add(file.getPath());
+            // Execute the external database scripts
+            var commonConfig = new CommonConfig();
+            logger.info("Executing external database scripts from " + commonConfig.getDatabaseScriptsLocation());
+            ExceptionUtils.tryCatchLog(
+                    () -> SystemStatus.executeExternalDatabaseScripts(commonConfig.getDatabaseScriptsLocation(), context.getBean(PostgresqlDataInterface_Impl.class)),
+                    (ex) -> logger.warn("Couldn't read the db scripts in the external database scripts folder; path wasn't found or other IO problems. ", ex));
+            logger.info("Finished with executing external database scripts.");
+    
+            // Read the import path from the CLI
+            var options = getOptions();
+            var parser = new DefaultParser();
+            var cmd = parser.parse(options, args);
+    
+            var importSrcPath = cmd.getOptionValue("importSrc");
+            var importDirPath = cmd.getOptionValue("importDir");
+            var importId = UUID.randomUUID().toString();
+            var importerNumber = Integer.parseInt(cmd.getOptionValue("importerNumber"));
+            var numThreadsStr = cmd.getOptionValue("numThreads");
+            var casView = cmd.getOptionValue("casView");
+            var numThreads = 1;
+            if (numThreadsStr != null) numThreads = Integer.parseInt(numThreadsStr);
+    
+            if (importerNumber != 1) {
+                throw new InvalidParameterException("For now, the -importerNumber must always be 1, since this will be the only instance. Canceling.");
             }
-        }
+    
+            var importablePaths = new ArrayList<String>();
+            // If no parent directory was given, we simply import the single src path
+            if (importDirPath == null) importablePaths.add(importSrcPath);
+            else {
+                // Else, we want to check EACH folder in the parent directory and try to import them each.
+                var dir = new File(importDirPath);
+                for (var file : Objects.requireNonNull(dir.listFiles())) {
+                    if (file.isDirectory()) importablePaths.add(file.getPath());
+                }
+            }
+    
+            for (var path : importablePaths) {
+                var importer = new Importer(context, path, importerNumber, importId, casView);
+    
+                // If this is the number 1 importer, he will create a Database entry for this import. The other importers will wait for that db entry.
+                if (importerNumber == 1) {
+                    var uceImport = new UCEImport(importId, path, ImportStatus.STARTING);
+                    var fileCount = ExceptionUtils.tryCatchLog(importer::getXMICountInPath,
+                            (ex) -> logger.warn("There was an IO error counting the importable UIMA files - the import will probably fail at some point.", ex));
+                    uceImport.setTotalDocuments(fileCount == null ? -1 : fileCount);
+                    context.getBean(PostgresqlDataInterface_Impl.class).saveOrUpdateUceImport(uceImport);
+                } else {
+                    // TODO: This was meant to be prepared for the incorporation into DUUI, but this isn't decided yet.
+                    ;
+                }
 
-        for (var path : importablePaths) {
-            var importer = new Importer(context, path, importerNumber, importId, casView);
-
-            // If this is the number 1 importer, he will create a Database entry for this import. The other importers will wait for that db entry.
-            if (importerNumber == 1) {
-                var uceImport = new UCEImport(importId, path, ImportStatus.STARTING);
-                var fileCount = ExceptionUtils.tryCatchLog(importer::getXMICountInPath,
-                        (ex) -> logger.warn("There was an IO error counting the importable UIMA files - the import will probably fail at some point.", ex));
-                uceImport.setTotalDocuments(fileCount == null ? -1 : fileCount);
-                context.getBean(PostgresqlDataInterface_Impl.class).saveOrUpdateUceImport(uceImport);
-            } else {
-                // TODO: This was meant to be prepared for the incorporation into DUUI, but this isn't decided yet.
-                ;
+                importer.start(numThreads);
             }
 
-            importer.start(numThreads);
+        } catch (Exception e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
         }
 
     }

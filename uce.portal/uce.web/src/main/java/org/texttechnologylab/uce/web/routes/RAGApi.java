@@ -11,15 +11,18 @@ import org.springframework.context.ApplicationContext;
 import org.texttechnologylab.uce.common.annotations.auth.Authentication;
 import org.texttechnologylab.uce.common.backgroundtasks.RAGStreamBackgroundTask;
 import org.texttechnologylab.uce.common.config.CommonConfig;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.corpus.Document;
 import org.texttechnologylab.uce.common.models.corpus.Image;
 import org.texttechnologylab.uce.common.models.rag.*;
+import org.texttechnologylab.uce.common.security.DocumentAccessManager;
 import org.texttechnologylab.uce.common.services.PostgresqlDataInterface_Impl;
 import org.texttechnologylab.uce.common.services.RAGService;
 import org.texttechnologylab.uce.common.utils.SystemStatus;
 import org.texttechnologylab.uce.web.CustomFreeMarkerEngine;
 import org.texttechnologylab.uce.web.LanguageResources;
+import org.texttechnologylab.uce.web.freeMarker.AccessDeniedRenderer;
 
 import java.util.*;
 import java.util.regex.Matcher;
@@ -33,11 +36,14 @@ public class RAGApi implements UceApi {
     private final CommonConfig commonConfig = new CommonConfig();
     private final Map<UUID, RAGChatState> activeRagChatStates = new HashMap<>();
 
+    private final DocumentAccessManager accessManager;
+
     public RAGApi(ApplicationContext serviceContext,
                   Configuration freemarkerConfig) {
         this.freemarkerConfig = freemarkerConfig;
         this.db = serviceContext.getBean(PostgresqlDataInterface_Impl.class);
         this.ragService = serviceContext.getBean(RAGService.class);
+        this.accessManager = serviceContext.getBean(DocumentAccessManager.class);
     }
 
     /**
@@ -56,6 +62,12 @@ public class RAGApi implements UceApi {
         try {
             var plotAsHtml = db.getCorpusTsnePlotByCorpusId(corpusId).getPlotHtml();
             ctx.result(plotAsHtml == null ? "" : plotAsHtml);
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error fetching the tsne plot of corpus: " + corpusId, ex);
             ctx.result("");
@@ -67,7 +79,6 @@ public class RAGApi implements UceApi {
      * This can be used fo get messages updates for streaming results.
      */
     public void getMessagesForChat(Context ctx) {
-        Gson gson = new Gson();
         ctx.contentType("application/json");
 
         var chatId = ExceptionUtils.tryCatchLog(() -> ctx.queryParam("chatId"),
@@ -159,7 +170,18 @@ public class RAGApi implements UceApi {
             userRagMessage.setRole(Roles.USER);
             userRagMessage.setMessage(userMessage);
 
-            var prompt = "### Context: [NO CONTEXT - USE CONTEXT FROM PREVIOUS QUESTION IF EXIST] \n### Instruktion: " + userMessage;
+            // if we are using MCP we can skip all the extras
+            var usingMcp = SystemStatus.UceConfig.getSettings().getMcp().isEnabled();
+
+            var prompt_replace_text = "";
+            if (usingMcp) {
+                prompt_replace_text = "[NO CONTEXT - CALL TOOLS TO GET CONTEXT OR PERFORM ACTIONS]";
+            }
+            else {
+                prompt_replace_text = "[NO CONTEXT - USE CONTEXT FROM PREVIOUS QUESTION IF EXIST]";
+            }
+            var prompt = "### Context: " + prompt_replace_text + " \n### Instruktion: " + userMessage;
+
             // Now fetch some context through embeddings.
             // When do we actually fetch more context? Good paper here: https://arxiv.org/html/2401.06800v1
             // Update: 16.04.2024: I've trained a BERT model that classifies user inputs into context_needed or
@@ -171,16 +193,20 @@ public class RAGApi implements UceApi {
 //            if (documentId != null) {
 //                contextNeeded = 1;
 //            }
-//            else {
+            if (usingMcp) {
+                // no context needed, the model can get it by using tools
+                contextNeeded = 0;
+            }
+            else {
                 contextNeeded = ExceptionUtils.tryCatchLog(
                         () -> ragService.postRAGContextNeeded(userMessage),
                         (ex) -> logger.error("Error getting the ContextNeeded info from the rag service.", ex));
                 if (contextNeeded == null) contextNeeded = 1;
-//            }
+            }
 
             // Check if the user wants to work with just one document or with multiple documents,
             // unless a specific id is already given in the request
-            if (documentId == null) {
+            if (documentId == null && !usingMcp) {
                 try {
                     if (userMessage.contains("ID")) {
                         Matcher matcher = patternIDGiven.matcher(userMessage);
@@ -199,7 +225,7 @@ public class RAGApi implements UceApi {
             // Check for the amount of documents the user wants to work with
             String documentTitle = null;
             // Only if there is no document id given
-            if (documentId == null) {
+            if (documentId == null && !usingMcp) {
                 List<String> parts = List.of("URL", "title", "ID");
                 for (String part : parts) {
                     if (documentId != null) {
@@ -217,7 +243,7 @@ public class RAGApi implements UceApi {
                     if (documentTitle != null && !documentTitle.isEmpty()) {
                         try {
                             Integer documentIdInt = Integer.parseInt(documentTitle);
-                            Document doc = db.getDocumentById(documentIdInt);
+                            Document doc = db.getDocumentById(documentIdInt); 
                             if (doc != null) {
                                 documentId = doc.getId();
                                 System.out.println("Found document ID from ID: " + documentTitle);
@@ -248,7 +274,7 @@ public class RAGApi implements UceApi {
             // Check for the amount of documents the user wants to work with
             Integer amountOfDocs = null;
             // Only if there is no document id given
-            if (documentId == null) {
+            if (documentId == null && !usingMcp) {
                 amountOfDocs = ExceptionUtils.tryCatchLog(
                         () -> ragService.postRAGAmountDocs(userMessage, chatState.getModel()),
                         (ex) -> logger.error("Error getting the AmountDocs info from the rag service.", ex));
@@ -297,12 +323,14 @@ public class RAGApi implements UceApi {
                         contextText.append("Content:\n").append(doc.getFullText()).append("\n");
                         contextText.append("</document>").append("\n\n");
                     }
-                    prompt = prompt.replace("[NO CONTEXT - USE CONTEXT FROM PREVIOUS QUESTION IF EXIST]", contextText);
+                    prompt = prompt.replace(prompt_replace_text, contextText);
                 }
                 else {
                     nearestDocumentChunkEmbeddings = ragService.getClosestDocumentChunkEmbeddings(userMessage, amountOfDocs, -1);
                     // foreach fetched document embedding, we also fetch the actual documents so the chat can show them
-                    foundDocuments = db.getManyDocumentsByIds(nearestDocumentChunkEmbeddings.stream().map(d -> Math.toIntExact(d.getDocument_id())).toList(), hibernateInit);
+
+                    // TODO Why is converting to int necessary here? document_id is long
+                    foundDocuments = db.getManyDocumentsByIds(nearestDocumentChunkEmbeddings.stream().map(d -> d.getDocument_id()).toList(), hibernateInit);
                     StringBuilder contextText = new StringBuilder();
                     contextText.append("The following documents contain information, ordered by relevance.\n\n");
                     int docInd = 0;
@@ -327,7 +355,7 @@ public class RAGApi implements UceApi {
                         contextText.append("Search result:\n").append(nearestDocumentChunkEmbedding.getCoveredText()).append("\n");
                         contextText.append("</document>").append("\n\n");
                     }
-                    prompt = prompt.replace("[NO CONTEXT - USE CONTEXT FROM PREVIOUS QUESTION IF EXIST]", contextText);
+                    prompt = prompt.replace(prompt_replace_text, contextText);
                 }
             }
             userRagMessage.setPrompt(prompt);
@@ -345,7 +373,7 @@ public class RAGApi implements UceApi {
             // TODO we need to make sure, that we cannot accept another message from the user while the streaming is in progress.
             if (stream) {
                 // Start a background thread that will handle the streaming response
-                Runnable backgroundTask = new RAGStreamBackgroundTask(ragService, chatState, nearestDocumentChunkEmbeddings, foundDocuments);
+                Runnable backgroundTask = accessManager.wrap(new RAGStreamBackgroundTask(ragService, chatState, nearestDocumentChunkEmbeddings, foundDocuments));
                 // TODO store active background threads to be able to cancel them if needed
                 var backgroundThread = new Thread(backgroundTask);
                 backgroundThread.start();
@@ -360,7 +388,7 @@ public class RAGApi implements UceApi {
             // Now let's ask our rag llm
             String finalPrompt = prompt;
             var answer = ExceptionUtils.tryCatchLog(
-                    () -> ragService.postNewRAGPrompt(chatState.getMessages(), chatState.getModel()),
+                    () -> ragService.postNewRAGPrompt(chatState),
                     (ex) -> logger.error("Error getting the next response from our LLM RAG service. The prompt: " + finalPrompt, ex));
             if (answer == null) {
                 var languageResources = LanguageResources.fromRequest(ctx);
@@ -511,6 +539,13 @@ public class RAGApi implements UceApi {
                     .toList();
 
             ctx.json(simplified);
+        
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error getting sentence embeddings.", ex);
             ctx.status(500);

@@ -1,19 +1,34 @@
 package org.texttechnologylab.uce.search;
 
-import com.google.gson.Gson;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import static java.util.stream.Collectors.groupingBy;
+
 import org.joda.time.DateTime;
 import org.texttechnologylab.uce.common.config.CommonConfig;
 import org.texttechnologylab.uce.common.config.CorpusConfig;
+import org.texttechnologylab.uce.common.models.authentication.UceUser;
 import org.texttechnologylab.uce.common.models.corpus.Document;
 import org.texttechnologylab.uce.common.models.corpus.UCEMetadata;
 import org.texttechnologylab.uce.common.models.corpus.UCEMetadataValueType;
 import org.texttechnologylab.uce.common.models.dto.UCEMetadataFilterDto;
-import org.texttechnologylab.uce.common.models.search.*;
+import org.texttechnologylab.uce.common.models.search.AnnotationSearchResult;
+import org.texttechnologylab.uce.common.models.search.CacheItem;
+import org.texttechnologylab.uce.common.models.search.DocumentChunkEmbeddingSearchResult;
+import org.texttechnologylab.uce.common.models.search.EnrichedSearchToken;
+import org.texttechnologylab.uce.common.models.search.OrderByColumn;
+import org.texttechnologylab.uce.common.models.search.PageSnippet;
+import org.texttechnologylab.uce.common.models.search.SearchLayer;
+import org.texttechnologylab.uce.common.models.search.SearchOrder;
+import org.texttechnologylab.uce.common.models.search.SearchType;
 import org.texttechnologylab.uce.common.states.KeywordInContextState;
 
-import java.util.*;
-
-import static java.util.stream.Collectors.groupingBy;
+import com.google.gson.Gson;
 
 /**
  * A class that holds all states of a biofid search. We can use this class to serialize the search. It shouldn't hold any services.
@@ -45,6 +60,10 @@ public class SearchState extends CacheItem {
     private SearchOrder order = SearchOrder.DESC;
     private OrderByColumn orderBy = OrderByColumn.RANK;
     private KeywordInContextState keywordInContextState;
+
+    // Username for authentication
+    private String sessionUser;
+
     private ArrayList<AnnotationSearchResult> foundNamedEntities = new ArrayList<>();
     private ArrayList<AnnotationSearchResult> foundTimes = new ArrayList<>();
     private ArrayList<AnnotationSearchResult> foundTaxons = new ArrayList<>();
@@ -81,6 +100,12 @@ public class SearchState extends CacheItem {
 
     public void dispose(){ }
 
+    public String getSessionUser() {
+        return sessionUser;
+    }
+
+    public void setSessionUser(String sessionUser) {
+        this.sessionUser = sessionUser;
 
     public boolean isEnrichedSearchQueryIsCutoff() {
         return enrichedSearchQueryIsCutoff;

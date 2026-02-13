@@ -1,7 +1,8 @@
 package org.texttechnologylab.uce.common.services;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
+
 import org.keycloak.authorization.client.AuthzClient;
 import org.springframework.stereotype.Service;
 import org.texttechnologylab.uce.common.config.CommonConfig;
@@ -9,11 +10,11 @@ import org.texttechnologylab.uce.common.models.util.HealthStatus;
 import org.texttechnologylab.uce.common.utils.AuthenticationUtils;
 import org.texttechnologylab.uce.common.utils.SystemStatus;
 
-import java.security.NoSuchAlgorithmException;
-import java.security.spec.InvalidKeySpecException;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
 
 @Service
-public class AuthenticationService implements Authentication{
+public final class AuthenticationService implements Authentication{
 
     private static final CommonConfig commonConfig = new CommonConfig();
     // Good resources to work with keycloak: https://www.keycloak.org/securing-apps/authz-client
@@ -37,6 +38,7 @@ public class AuthenticationService implements Authentication{
         }
     }
 
+    @Override
     public boolean hasPermission(String token, String resource, String scope){
         return true;
     }

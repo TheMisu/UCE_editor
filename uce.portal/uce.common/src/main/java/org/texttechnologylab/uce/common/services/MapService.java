@@ -4,6 +4,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.stereotype.Service;
 import org.texttechnologylab.uce.common.exceptions.DatabaseOperationException;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.dto.map.MapClusterDto;
 import org.texttechnologylab.uce.common.models.dto.map.PointDto;
@@ -23,6 +24,7 @@ public class MapService {
     /**
      * This fetches single points of {Geoname,Time} -> Annotation links, such that you can query occurrences
      * of annotations (taxa, ner e.g.) by a given location viewport and a time range.
+     * @throws DocumentAccessDeniedException 
      */
     public List<PointDto> getGeoNameTimelineLinks(double minLng,
                                                   double minLat,
@@ -33,22 +35,23 @@ public class MapService {
                                                   long corpusId,
                                                   int skip,
                                                   int take,
-                                                  String fromAnnotationTypeTable) throws DatabaseOperationException {
+                                                  String fromAnnotationTypeTable) throws DatabaseOperationException, DocumentAccessDeniedException {
         return db.getGeonameTimelineLinks(minLng, minLat, maxLng, maxLat, fromDate, toDate, corpusId, skip, take, fromAnnotationTypeTable);
     }
 
     /**
      * This fetches pre-cached clusters of GeoNames that have an annotationlink to other annotations. It also
      * checks for Time links, such that you can not only query by a location viewport, but also by time.
+     * @throws DocumentAccessDeniedException 
      */
     public List<MapClusterDto> getTimelineMapClusters(double minLng,
-                                                      double minLat,
-                                                      double maxLng,
-                                                      double maxLat,
-                                                      double gridSize,
-                                                      java.sql.Date fromDate,
-                                                      java.sql.Date toDate,
-                                                      long corpusId) throws DatabaseOperationException {
+                                                           double minLat,
+                                                           double maxLng,
+                                                           double maxLat,
+                                                           double gridSize,
+                                                           java.sql.Date fromDate,
+                                                           java.sql.Date toDate,
+                                                           long corpusId) throws DatabaseOperationException, DocumentAccessDeniedException {
         return db.getGeonameClustersFromTimelineMap(minLng, minLat, maxLng, maxLat, gridSize, fromDate, toDate, corpusId);
     }
 
@@ -61,8 +64,9 @@ public class MapService {
 
     /**
      * Refreshes the Materialized View that acts as a cache between GeoName,Time -> annotationlinks
+     * @throws DocumentAccessDeniedException 
      */
-    public void refreshCachedTimelineMap(boolean force) throws DatabaseOperationException {
+    public void refreshCachedTimelineMap(boolean force) throws DatabaseOperationException, DocumentAccessDeniedException {
         if (force || !cachedTimelineMapHasEntries())
             db.executeSqlWithoutReturn("REFRESH MATERIALIZED VIEW geoname_context_timeline_cache");
     }

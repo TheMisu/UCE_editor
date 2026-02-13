@@ -5,6 +5,7 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.stereotype.Service;
 import org.texttechnologylab.uce.common.config.CommonConfig;
 import org.texttechnologylab.uce.common.exceptions.DatabaseOperationException;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.UIMAAnnotation;
 import org.texttechnologylab.uce.common.models.biofid.GazetteerTaxon;
@@ -113,6 +114,7 @@ public class LexiconService {
 
     /**
      * Gets a paginated list of lexicon entries depending on the parameters.
+     * @throws DocumentAccessDeniedException 
      */
     public List<LexiconEntry> getEntries(int skip,
                                          int take,
@@ -120,7 +122,7 @@ public class LexiconService {
                                          List<String> annotationFilters,
                                          String sortColumn,
                                          String sortOrder,
-                                         String searchInput) throws DatabaseOperationException {
+                                         String searchInput) throws DatabaseOperationException, DocumentAccessDeniedException {
         var entries = db.getManyLexiconEntries(skip, take, alphabet, annotationFilters, sortColumn, sortOrder, searchInput);
         return entries;
     }

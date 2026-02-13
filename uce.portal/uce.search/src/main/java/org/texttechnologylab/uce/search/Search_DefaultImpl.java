@@ -4,8 +4,10 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.hibernate.exception.SQLGrammarException;
 import org.springframework.context.ApplicationContext;
+import org.texttechnologylab.models.authentication.DocumentPermission;
 import org.texttechnologylab.uce.common.config.CorpusConfig;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
+import org.texttechnologylab.uce.common.models.authentication.UceUser;
 import org.texttechnologylab.uce.common.models.dto.UCEMetadataFilterDto;
 import org.texttechnologylab.uce.common.models.search.*;
 import org.texttechnologylab.uce.common.services.JenaSparqlService;
@@ -117,7 +119,7 @@ public class Search_DefaultImpl implements Search {
      *
      * @return
      */
-    public SearchState initSearch() throws SQLGrammarException {
+    public SearchState initSearch(UceUser user) throws SQLGrammarException {
         //var countAll = !this.searchState.getSearchQuery().isEmpty();
         DocumentSearchResult documentSearchResult = executeSearchOnDatabases(true);
         if (documentSearchResult == null)
@@ -136,6 +138,9 @@ public class Search_DefaultImpl implements Search {
         searchState.setFoundNamedEntities(documentSearchResult.getFoundNamedEntities());
         searchState.setFoundTaxons(documentSearchResult.getFoundTaxons());
         searchState.setFoundTimes(documentSearchResult.getFoundTimes());
+
+        // Add user name for authentication
+        searchState.setSessionUser(user != null ? user.getUsername() : DocumentPermission.PUBLIC_USERNAME);
 
         // Execute embedding search if desired.
         // This search is lose coupled from the rest and only done once in the initiation.
@@ -170,7 +175,7 @@ public class Search_DefaultImpl implements Search {
      *
      * @return
      */
-    public SearchState getSearchHitsForPage(int page) {
+    public SearchState getSearchHitsForPage(int page, UceUser user) {
         // Adjust the current page and execute the search again
         this.searchState.setCurrentPage(page);
         var documentSearchResult = executeSearchOnDatabases(false);
@@ -207,7 +212,8 @@ public class Search_DefaultImpl implements Search {
                         searchState.getUceMetadataFilters(),
                         searchState.isProModeActivated(),
                         searchState.getDbSchema(),
-                        searchState.getSourceTable());
+                        searchState.getSourceTable()
+                        );
             } catch (Exception ex) {
                 logger.error("Error executing a search on the database with search layer FULLTEXT. Search can't be executed.", ex);
                 // We only want to rethrow grammar exceptions for the pro mode.

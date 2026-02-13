@@ -4,6 +4,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.context.ApplicationContext;
 import org.texttechnologylab.uce.common.exceptions.DatabaseOperationException;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.corpus.GeoNameFeatureClass;
 import org.texttechnologylab.uce.common.models.dto.LayeredSearchLayerDto;
@@ -29,8 +30,9 @@ public class LayeredSearch extends CacheItem {
 
     /**
      * Cleans up and deletes all existing tables within the 'search' schema of the database.
+     * @throws DocumentAccessDeniedException 
      */
-    public static void CleanupScheme(PostgresqlDataInterface_Impl db) throws DatabaseOperationException {
+    public static void CleanupScheme(PostgresqlDataInterface_Impl db) throws DatabaseOperationException, DocumentAccessDeniedException {
         var query = "DO $$ DECLARE\n" +
                     "    r RECORD;\n" +
                     "BEGIN\n" +
@@ -68,15 +70,17 @@ public class LayeredSearch extends CacheItem {
 
     /**
      * Disposes this @LayeredSearch by also cleaning up temporary tables in the database.
+     * @throws DocumentAccessDeniedException 
      */
-    public void dispose() throws DatabaseOperationException {
+    public void dispose() throws DatabaseOperationException, DocumentAccessDeniedException {
         dropAllTables();
     }
 
     /**
      * Takes in a layer of any depth and updates the corresponding layered search with the information.
+     * @throws DocumentAccessDeniedException 
      */
-    public void updateLayers(ArrayList<LayeredSearchLayerDto> layerDtos) throws DatabaseOperationException {
+    public void updateLayers(ArrayList<LayeredSearchLayerDto> layerDtos) throws DatabaseOperationException, DocumentAccessDeniedException {
         for (var layer : layerDtos) {
             var existingLayer = this.layers.stream().filter(l -> l.getDepth() == layer.getDepth()).findFirst();
             // If we have a layer of that depth, check if its dirty (the slots changed its value)
@@ -99,8 +103,9 @@ public class LayeredSearch extends CacheItem {
 
     /**
      * This looks at the existing layers and, if necessary, applies and updates new and existing sql queries of the layers
-     */
-    public void executeLayersOnDb() throws DatabaseOperationException {
+          * @throws DocumentAccessDeniedException 
+          */
+         public void executeLayersOnDb() throws DatabaseOperationException, DocumentAccessDeniedException {
         // If no layers are dirty, we don't have to do anything
         if (this.layers.stream().noneMatch(LayeredSearchLayerDto::isDirty)) return;
 
@@ -125,7 +130,7 @@ public class LayeredSearch extends CacheItem {
         }
     }
 
-    private boolean executeSingleLayerOnDb(LayeredSearchLayerDto layer) throws DatabaseOperationException {
+    private boolean executeSingleLayerOnDb(LayeredSearchLayerDto layer) throws DatabaseOperationException, DocumentAccessDeniedException {
         dropTable(buildLayerTableName(layer.getDepth()));
         createSearchTableIfNotExists(buildLayerTableName(layer.getDepth()));
 
@@ -255,7 +260,7 @@ public class LayeredSearch extends CacheItem {
         return true;
     }
 
-    private void createSearchTableIfNotExists(String name) throws DatabaseOperationException {
+    private void createSearchTableIfNotExists(String name) throws DatabaseOperationException, DocumentAccessDeniedException {
         var query = "CREATE SCHEMA IF NOT EXISTS search;\n" +
                     "DO $$ \n" +
                     "BEGIN\n" +
@@ -271,7 +276,7 @@ public class LayeredSearch extends CacheItem {
         db.executeSqlWithoutReturn(query);
     }
 
-    private void calculateLayerCount(LayeredSearchLayerDto layer) throws DatabaseOperationException {
+    private void calculateLayerCount(LayeredSearchLayerDto layer) throws DatabaseOperationException, DocumentAccessDeniedException {
         var query = "SELECT COUNT(DISTINCT id) AS p_count, COUNT(DISTINCT document_id) as d_count FROM search." + buildLayerTableName(layer.getDepth());
         var resultList = db.executeSqlWithReturn(query);
         if (resultList.isEmpty()) return;
@@ -284,8 +289,9 @@ public class LayeredSearch extends CacheItem {
 
     /**
      * Drops all tables that start with the given searchId, so all depths of it.
+     * @throws DocumentAccessDeniedException 
      */
-    private void dropAllTables() throws DatabaseOperationException {
+    private void dropAllTables() throws DatabaseOperationException, DocumentAccessDeniedException {
         var query = "DO $$ \n" +
                     "DECLARE \n" +
                     "    table_name TEXT;\n" +
@@ -300,7 +306,7 @@ public class LayeredSearch extends CacheItem {
         db.executeSqlWithoutReturn(query);
     }
 
-    private void dropTable(String name) throws DatabaseOperationException {
+    private void dropTable(String name) throws DatabaseOperationException, DocumentAccessDeniedException {
         var query = "DROP TABLE IF EXISTS search.{NAME}";
         query = query.replace("{NAME}", name);
         db.executeSqlWithoutReturn(query);

@@ -7,30 +7,30 @@
 
 services:
 
-  uce-fuseki-sparql:
-    container_name: uce-fuseki-sparql
-    image: docker.texttechnologylab.org/uce/uce-fuseki-sparql:0.0.1
-    ports:
-      - "8030:5430"
-    volumes:
-      - ${TDB2_DATA}:/fuseki/databases/${TDB2_ENDPOINT}
-    environment:
-      - JAVA_OPTIONS=${JAVA_OPTIONS}
-    command: --update --tdb2 --port 5430 --loc /fuseki/databases/${TDB2_ENDPOINT} /${TDB2_ENDPOINT}
-    networks:
-      - app_net
+  # uce-fuseki-sparql:
+  #   container_name: uce-fuseki-sparql
+  #   image: docker.texttechnologylab.org/uce/uce-fuseki-sparql:0.0.1
+  #   ports:
+  #     - "8030:5430"
+  #   volumes:
+  #     - ${TDB2_DATA}:/fuseki/databases/${TDB2_ENDPOINT}
+  #   environment:
+  #     - JAVA_OPTIONS=${JAVA_OPTIONS}
+  #   command: --update --tdb2 --port 5430 --loc /fuseki/databases/${TDB2_ENDPOINT} /${TDB2_ENDPOINT}
+  #   networks:
+  #     - app_net
     
-  uce-rag-service:
-    container_name: uce-rag-service
-    build:
-      context: .
-      dockerfile: ./rag/Dockerfile
-    ports:
-      - "8080:5678" 
-    depends_on:
-      - uce-postgresql-db 
-    networks:
-      - app_net
+  # uce-rag-service:
+  #   container_name: uce-rag-service
+  #   build:
+  #     context: .
+  #     dockerfile: ./rag/Dockerfile
+  #   ports:
+  #     - "8080:5678" 
+  #   depends_on:
+  #     - uce-postgresql-db 
+  #   networks:
+  #     - app_net
 
   uce-web:
     container_name: uce-web
@@ -72,6 +72,7 @@ services:
       - "./database:/app/database"
       # MOUNT HERE ALL UIMA CORPORA INTO THE '/app/input/corpora/' PATH - EXAMPLE BELOW FOR ZOBODAT CORPUS: 
       # - "./../test_data/corpora/zobodat:/app/input/corpora/zobodat"
+      - "./../uce_testcorpora:/app/input/corpora/uce_testcorpora"
     command: [
       "java",
       "-jar",
@@ -100,7 +101,7 @@ services:
         test: ["CMD-SHELL", "pg_isready -U postgres"]
         interval: 5s
         timeout: 5s
-        start_interval: 1s
+        start_period: 10s
         retries: 20
 
   uce-minio-storage:

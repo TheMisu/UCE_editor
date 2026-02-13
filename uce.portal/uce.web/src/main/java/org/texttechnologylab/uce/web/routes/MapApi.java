@@ -6,10 +6,12 @@ import io.javalin.http.Context;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.context.ApplicationContext;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.services.MapService;
 import org.texttechnologylab.uce.common.services.PostgresqlDataInterface_Impl;
 import org.texttechnologylab.uce.web.LanguageResources;
+import org.texttechnologylab.uce.web.freeMarker.AccessDeniedRenderer;
 
 import java.io.IOException;
 import java.sql.Date;
@@ -62,6 +64,12 @@ public class MapApi implements UceApi {
 
         try {
             ctx.result(gson.toJson(mapService.getGeoNameTimelineLinks(minLng, minLat, maxLng, maxLat, fromDate, toDate, corpusId, skip, take, category)));
+        } catch (DocumentAccessDeniedException dade) {
+                AccessDeniedRenderer.render(
+                        ctx,
+                        dade,
+                        logger);
+                return;
         } catch (Exception ex) {
             logger.error("Error getting linked occurrences from map - best refer to the last logged API call " +
                          "with id=" + ctx.attribute("id") + " to this endpoint for URI parameters.", ex);
@@ -97,6 +105,12 @@ public class MapApi implements UceApi {
 
         try {
             ctx.result(gson.toJson(mapService.getTimelineMapClusters(minLng, minLat, maxLng, maxLat, 0.0001, fromDate, toDate, corpusId)));
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error getting linked occurrence clusters from map - best refer to the last logged API call " +
                          "with id=" + ctx.attribute("id") + " to this endpoint for URI parameters.", ex);

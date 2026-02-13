@@ -6,7 +6,7 @@ import java.util.HashMap;
 public class DocumentSearchResult {
 
     private int documentCount;
-    private ArrayList<Integer> documentIds;
+    private ArrayList<Long> documentIds;
     private ArrayList<Integer> documentHits;
     private HashMap<Integer, ArrayList<PageSnippet>> searchSnippets;
     private HashMap<Long, ArrayList<PageSnippet>> searchSnippetsDocIdToSnippet;
@@ -24,7 +24,7 @@ public class DocumentSearchResult {
 
 
     public DocumentSearchResult(int documentCount,
-                                ArrayList<Integer> documentIds) {
+                                ArrayList<Long> documentIds) {
         this.documentCount = documentCount;
         this.documentIds = documentIds;
     }
@@ -97,7 +97,7 @@ public class DocumentSearchResult {
         this.documentCount = documentCount;
     }
 
-    public void setDocumentIds(ArrayList<Integer> documentIds) {
+    public void setDocumentIds(ArrayList<Long> documentIds) {
         this.documentIds = documentIds;
     }
 
@@ -137,7 +137,7 @@ public class DocumentSearchResult {
         return documentCount;
     }
 
-    public ArrayList<Integer> getDocumentIds() {
+    public ArrayList<Long> getDocumentIds() {
         return documentIds;
     }
 

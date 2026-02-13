@@ -9,6 +9,7 @@ import io.javalin.http.Context;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.context.ApplicationContext;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.UIMAAnnotation;
 import org.texttechnologylab.uce.common.models.WikiModel;
@@ -24,6 +25,7 @@ import org.texttechnologylab.uce.common.utils.SystemStatus;
 import org.texttechnologylab.uce.web.CustomFreeMarkerEngine;
 import org.texttechnologylab.uce.web.LanguageResources;
 import org.texttechnologylab.uce.web.SessionManager;
+import org.texttechnologylab.uce.web.freeMarker.AccessDeniedRenderer;
 import org.texttechnologylab.uce.web.freeMarker.Renderer;
 
 import java.io.IOException;
@@ -189,6 +191,13 @@ public class WikiApi implements UceApi {
             var cachedWikiPage = new CachedWikiPage(view);
             SessionManager.CachedWikiPages.put(cacheId, cachedWikiPage);
             ctx.result(view);
+        
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error getting a wiki page - best refer to the last logged API call " +
                          "with id=" + ctx.attribute("id") + " to this endpoint for URI parameters.", ex);
@@ -328,8 +337,14 @@ public class WikiApi implements UceApi {
                 linkableDto.toNodes.add(newLinkableDto);
             }
 
-            //ctx.result(gson.toJson(linkableDto));
+            // ctx.result(gson.toJson(linkableDto));
             ctx.json(linkableDto);
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error getting linkable - best refer to the last logged API call " +
                          "with id=" + ctx.attribute("id") + " to this endpoint for URI parameters.", ex);
@@ -382,6 +397,12 @@ public class WikiApi implements UceApi {
                 jsonTree.getAsJsonObject("page").addProperty("coveredText", pageText);
             }
             ctx.result(specialGson.toJson(jsonTree));
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error getting an annotation - best refer to the last logged API call " +
                          "with id=" + ctx.attribute("id") + " to this endpoint for URI parameters.", ex);

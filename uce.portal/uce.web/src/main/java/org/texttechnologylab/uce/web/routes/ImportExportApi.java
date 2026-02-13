@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.context.ApplicationContext;
 import org.texttechnologylab.uce.common.config.CorpusConfig;
 import org.texttechnologylab.uce.common.exceptions.DatabaseOperationException;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.corpus.Corpus;
 import org.texttechnologylab.uce.common.services.PostgresqlDataInterface_Impl;
@@ -126,10 +127,12 @@ public class ImportExportApi implements UceApi {
                 var importFuture = CompletableFuture.supplyAsync(() -> {
                     try {
                         return importer.storeUploadedXMIToCorpusAsync(input, corpus1, fileName, documentId);
-                    } catch (DatabaseOperationException e) {
+                    } catch (DatabaseOperationException | DocumentAccessDeniedException e) {
                         throw new RuntimeException(e);
-                    }
+                    } 
                 });
+
+                 // TODO Handle DocumentAccessDeniedException properly
                 Long newDocumentId = importFuture.get();
                 // TODO check that this new document id is not null, could this happen?
 

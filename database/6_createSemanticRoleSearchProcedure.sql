@@ -15,6 +15,9 @@ CREATE OR REPLACE FUNCTION uce_semantic_role_search(
 	
     IN order_direction text DEFAULT 'DESC',
     IN order_by_column text DEFAULT 'title',
+
+	IN p_user_name text DEFAULT NULL,
+    IN p_min_level integer DEFAULT 1,
 	
     OUT total_count_out integer,
     OUT document_ids integer[],
@@ -34,7 +37,7 @@ BEGIN
 	CREATE TEMPORARY TABLE documents_query AS (
 		SELECT DISTINCT 
 			d.id
-		FROM document d
+		FROM permitted_documents(p_user_name, p_min_level) d
 		JOIN srlink sr ON d.id = sr.document_id
 		WHERE d.corpusid = corpusid_val 
 			AND (LOWER(sr.figurecoveredtext) = verb OR verb = '')

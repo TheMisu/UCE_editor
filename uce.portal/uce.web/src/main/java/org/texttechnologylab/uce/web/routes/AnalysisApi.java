@@ -10,8 +10,10 @@ import org.texttechnologylab.uce.analysis.History;
 import org.texttechnologylab.uce.analysis.RunDUUIPipeline;
 import org.texttechnologylab.uce.analysis.modules.DUUIInformation;
 import org.texttechnologylab.uce.common.annotations.auth.Authentication;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.models.dto.AnalysisRequestDto;
 import org.texttechnologylab.uce.common.models.dto.HistoryRequestDto;
+import org.texttechnologylab.uce.web.freeMarker.AccessDeniedRenderer;
 
 import java.util.HashMap;
 import java.util.List;
@@ -74,6 +76,12 @@ public class AnalysisApi implements UceApi {
 
             ctx.render("wiki/analysisResultFragment.ftl", model);
 
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error running analysis pipeline with request body: " + ctx.body(), ex);
             ctx.status(500);

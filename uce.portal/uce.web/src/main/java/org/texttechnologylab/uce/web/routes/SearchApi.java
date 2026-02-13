@@ -8,7 +8,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.hibernate.exception.SQLGrammarException;
 import org.springframework.context.ApplicationContext;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
+import org.texttechnologylab.uce.common.models.authentication.UceUser;
 import org.texttechnologylab.uce.common.models.dto.LayeredSearchLayerDto;
 import org.texttechnologylab.uce.common.models.dto.UCEMetadataFilterDto;
 import org.texttechnologylab.uce.common.models.search.OrderByColumn;
@@ -20,6 +22,7 @@ import org.texttechnologylab.uce.search.*;
 import org.texttechnologylab.uce.web.CustomFreeMarkerEngine;
 import org.texttechnologylab.uce.web.LanguageResources;
 import org.texttechnologylab.uce.web.SessionManager;
+import org.texttechnologylab.uce.web.freeMarker.AccessDeniedRenderer;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -53,6 +56,8 @@ public class SearchApi implements UceApi {
                 return;
             }
 
+            UceUser user = ctx.sessionAttribute("uceUser");
+
             // Sort the current search state.
             var activeSearchState = (SearchState) SessionManager.ActiveSearches.get(searchId);
             activeSearchState.setOrder(SearchOrder.valueOf(order));
@@ -64,7 +69,7 @@ public class SearchApi implements UceApi {
                 search = new SearchCompleteNegation();
             }
             search.fromSearchState(this.context, languageResources.getDefaultLanguage(), activeSearchState);
-            activeSearchState = search.getSearchHitsForPage(activeSearchState.getCurrentPage());
+            activeSearchState = search.getSearchHitsForPage(activeSearchState.getCurrentPage(), user);
 
             model.put("searchState", activeSearchState);
         } catch (Exception ex) {
@@ -93,6 +98,8 @@ public class SearchApi implements UceApi {
                 return;
             }
 
+            UceUser user = ctx.sessionAttribute("uceUser");
+
             // Get the next pages.
             var activeSearchState = (SearchState) SessionManager.ActiveSearches.get(searchId);
             Search search = new Search_DefaultImpl();
@@ -102,7 +109,7 @@ public class SearchApi implements UceApi {
                 search = new SearchCompleteNegation();
             }
             search.fromSearchState(this.context, languageResources.getDefaultLanguage(), activeSearchState);
-            activeSearchState = search.getSearchHitsForPage(page);
+            activeSearchState = search.getSearchHitsForPage(page, user);
 
             var model = new HashMap<String, Object>();
             model.put("searchState", activeSearchState);
@@ -147,6 +154,7 @@ public class SearchApi implements UceApi {
             var proModeActivated = Boolean.parseBoolean(requestBody.get("proMode").toString());
             var layeredSearchId = requestBody.get("layeredSearchId").toString();
             var layers = new ArrayList<LayeredSearchLayerDto>();
+            UceUser user = ctx.sessionAttribute("uceUser");
 
             // It's not tragic if no filters are given, not every corpus has them.
             ArrayList<UCEMetadataFilterDto> uceMetadataFilters = ExceptionUtils.tryCatchLog(
@@ -174,14 +182,14 @@ public class SearchApi implements UceApi {
             SearchState searchState = null;
             if (searchInput.startsWith("SR::")) {
                 var semanticRoleSearch = new Search_SemanticRoleImpl(context, corpusId, searchInput);
-                searchState = semanticRoleSearch.initSearch();
+                searchState = semanticRoleSearch.initSearch(user);
             } else if (searchInput.startsWith("NEG::")) {
                 var negRoleSearch = new SearchCompleteNegation(
                         context,
                         corpusId,
                         searchInput)
                         .withUceMetadataFilters(uceMetadataFilters);
-                searchState = negRoleSearch.initSearch();
+                searchState = negRoleSearch.initSearch(user);
             } else {
                 // Define the search layers from the sent layers
                 var searchLayers = new ArrayList<SearchLayer>();
@@ -203,7 +211,7 @@ public class SearchApi implements UceApi {
                         .withUceMetadataFilters(uceMetadataFilters)
                         .withLayeredSearch(layeredSearch);
 
-                searchState = search.initSearch();
+                searchState = search.initSearch(user);
             }
 
             SessionManager.ActiveSearches.put(searchState.getSearchId().toString(), searchState);
@@ -213,6 +221,12 @@ public class SearchApi implements UceApi {
         } catch (SQLGrammarException grammarException) {
             ctx.status(406);
             ctx.result(languageResources.get("searchGrammarError"));
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error starting a new search with the request body:\n " + gson.toJson(requestBody), ex);
             ctx.render("defaultError.ftl");
@@ -245,6 +259,12 @@ public class SearchApi implements UceApi {
             // Either way, update the layers
             layeredSearch.updateLayers(layers);
             ctx.json(layeredSearch.getLayers());
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error starting a new layered search with the request body:\n " + gson.toJson(requestBody), ex);
             ctx.status(500);
@@ -267,14 +287,21 @@ public class SearchApi implements UceApi {
             var arg1 = (ArrayList<String>) requestBody.get("arg1");
             var argm = (ArrayList<String>) requestBody.get("argm");
             var verb = requestBody.get("verb").toString();
+            UceUser user = ctx.sessionAttribute("uceUser");
 
             var semanticRoleSearch = new Search_SemanticRoleImpl(context, corpusId, arg0, arg1, argm, verb);
-            var searchState = semanticRoleSearch.initSearch();
+            var searchState = semanticRoleSearch.initSearch(user);
 
             model.put("searchState", searchState);
             SessionManager.ActiveSearches.put(searchState.getSearchId().toString(), searchState);
 
             ctx.render("search/searchResult.ftl", model);
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error starting a new semantic role search with the request body:\n " + gson.toJson(requestBody), ex);
             ctx.render("defaultError.ftl");
@@ -291,6 +318,7 @@ public class SearchApi implements UceApi {
         }
 
         try {
+
             var annotations = db.getAnnotationsOfCorpus(corpusId, 0, 250);
             model.put("time", annotations.stream().filter(a -> a.getInfo().equals("time")).toList());
             model.put("taxon", annotations.stream().filter(a -> a.getInfo().equals("taxon")).toList());
@@ -300,6 +328,12 @@ public class SearchApi implements UceApi {
             model.put("misc", annotations.stream().filter(a -> a.getInfo().equals("MISC")).toList());
 
             ctx.render("search/components/foundAnnotationsModal/foundAnnotationsModal.ftl", model);
+        } catch (DocumentAccessDeniedException dade) {
+            AccessDeniedRenderer.render(
+                    ctx,
+                    dade,
+                    logger);
+            return;
         } catch (Exception ex) {
             logger.error("Error getting the semantic role query builder view.", ex);
             ctx.render("defaultError.ftl");

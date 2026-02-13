@@ -309,7 +309,19 @@
   },
   "noAccess": {
     "de-DE": "Sie haben momentan keinen Zugriff auf diese Ressource.",
-    "en-EN": "You don't have access to this ressource right now."
+    "en-EN": "You don't have access to this resource right now."
+  },
+  "backToHome": {
+    "de-DE": "Zur Startseite",
+    "en-EN": "Back to home"
+  },
+  "goBack": {
+    "de-DE": "Zurück",
+    "en-EN": "Go back"
+  },
+  "contactAdminText": {
+    "de-DE": "Bitte kontaktieren Sie eine Administratorin oder einen Administrator, falls Sie glauben, dass es sich um einen Fehler handelt.",
+    "en-EN": "Please contact an administrator if you believe this is an error."
   },
   "loginRequired": {
     "de-DE": "Sie müssen eingeloggt sein, um auf diese Ressource zugreifen zu können.",
@@ -546,5 +558,9 @@
   "sentenceTopicFlow": {
     "de-DE": "Satz-Themenfluss",
     "en-EN": "Sentence Topic Flow"
+  },
+  "documentAccessDeniedError": {
+    "en-EN": "You are not allowed to view this document.",
+    "de-DE": "Sie haben keine Berechtigung, dieses Dokument zu sehen."
   }
 }

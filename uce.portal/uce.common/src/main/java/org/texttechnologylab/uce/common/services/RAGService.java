@@ -2,12 +2,24 @@ package org.texttechnologylab.uce.common.services;
 
 import com.google.gson.Gson;
 import com.pgvector.PGvector;
+import io.modelcontextprotocol.client.McpClient;
+import io.modelcontextprotocol.client.McpSyncClient;
+import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
+import io.modelcontextprotocol.spec.McpSchema;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jsoup.HttpStatusException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.texttechnologylab.models.authentication.DocumentPermission;
+import org.texttechnologylab.models.authentication.DocumentPermission.DOCUMENT_PERMISSION_LEVEL;
+import org.texttechnologylab.models.dto.RAGCompleteFullDto;
+import org.texttechnologylab.models.dto.RAGCompleteFullMessageToolCallDto;
+import org.texttechnologylab.models.rag.Tool;
+import org.texttechnologylab.models.rag.ToolFunction;
 import org.texttechnologylab.uce.common.config.CommonConfig;
 import org.texttechnologylab.uce.common.config.uceConfig.RAGModelConfig;
 import org.texttechnologylab.uce.common.exceptions.DatabaseOperationException;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.corpus.Document;
 import org.texttechnologylab.uce.common.models.corpus.KeywordDistribution;
@@ -15,6 +27,7 @@ import org.texttechnologylab.uce.common.models.corpus.Sentence;
 import org.texttechnologylab.uce.common.models.dto.*;
 import org.texttechnologylab.uce.common.models.rag.*;
 import org.texttechnologylab.uce.common.models.util.HealthStatus;
+import org.texttechnologylab.uce.common.security.DocumentAccessManager;
 import org.texttechnologylab.uce.common.utils.SystemStatus;
 
 import java.io.BufferedReader;
@@ -51,9 +64,34 @@ public class RAGService {
 
     static final Pattern patternAmount = Pattern.compile("\\d+");
 
+    private McpSyncClient mcpClient;
+
+    private final DocumentAccessManager accessManager;
+
     public RAGService(PostgresqlDataInterface_Impl postgresqlDataInterfaceImpl) {
         this.postgresqlDataInterfaceImpl = postgresqlDataInterfaceImpl;
+        this.accessManager = postgresqlDataInterfaceImpl.getAccessManager();
         TestConnection();
+    }
+
+    private static McpSyncClient initMcpClient() {
+        // own url?
+        HttpClientStreamableHttpTransport transportProvider = HttpClientStreamableHttpTransport
+                .builder("http://localhost:4567/mcp")
+                .build();
+
+        McpSyncClient client = McpClient.sync(transportProvider)
+                .requestTimeout(Duration.ofSeconds(60))  // TODO config
+                .capabilities(McpSchema.ClientCapabilities
+                        .builder()
+                        .roots(true)
+                        .build()
+                )
+                .build();
+
+        client.initialize();
+
+        return client;
     }
 
     public void TestConnection(){
@@ -136,8 +174,9 @@ public class RAGService {
      *
      * @param corpusId
      * @return
+     * @throws DocumentAccessDeniedException 
      */
-    public String getCorpusTsnePlot(long corpusId) throws DatabaseOperationException, URISyntaxException, IOException, InterruptedException, SQLException {
+    public String getCorpusTsnePlot(long corpusId) throws DatabaseOperationException, URISyntaxException, IOException, InterruptedException, SQLException, DocumentAccessDeniedException {
         var httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_2)
                 .build();
@@ -351,44 +390,131 @@ public class RAGService {
      *
      * @return
      */
-    public String postNewRAGPrompt(List<RAGChatMessage> chatHistory, RAGModelConfig modelConfig) throws URISyntaxException, IOException, InterruptedException {
+    public String postNewRAGPrompt(RAGChatState chatState) throws URISyntaxException, IOException, InterruptedException {
+        List<RAGChatMessage> chatHistory = chatState.getMessages();
+        RAGModelConfig modelConfig = chatState.getModel();
+
         var httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_2)
                 .build();
 
         var url = config.getRAGWebserverBaseUrl() + "rag/complete";
-        var config = new CommonConfig();
 
-        // Prepare workload
         var gson = new Gson();
-        var params = new HashMap<String, Object>();
 
-        params.put("model", modelConfig.getModel());
-        params.put("apiKey", modelConfig.getApiKey());
-        params.put("url", modelConfig.getUrl());
+        // repeated requests if the models is performing tool calls
+        while(true) {
+            // Prepare workload
+            var params = new HashMap<String, Object>();
 
-        // Add the chat history
-        var promptMessages = buildPromptMessages(chatHistory);
-        params.put("promptMessages", promptMessages);
-        var jsonData = gson.toJson(params);
+            params.put("model", modelConfig.getModel());
+            params.put("apiKey", modelConfig.getApiKey());
+            params.put("url", modelConfig.getUrl());
 
-        // Create request
-        var request = HttpRequest.newBuilder()
-                .uri(new URI(url))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonData))
-                .build();
-        // Send request and get response
-        var response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        var statusCode = response.statusCode();
-        if (statusCode != 200) throw new HttpStatusException("Request returned invalid status code: " + statusCode, statusCode, url);
+            // Add the chat history
+            var promptMessages = buildPromptMessages(chatHistory);
+            params.put("promptMessages", promptMessages);
 
-        var responseBody = response.body();
-        var ragCompleteDto = gson.fromJson(responseBody, RAGCompleteDto.class);
-        if (ragCompleteDto.getStatus() != 200) throw new HttpStatusException(
-                "Webservice replied with an internally wrong status code, something went wrong there: " + ragCompleteDto.getStatus(), statusCode, url);
+            // Add MCP tools
+            // TODO initialize MCP client
+            // TODO should we use only one client for all requests or per chat? when to create?
+            mcpClient = initMcpClient();
 
-        return ragCompleteDto.getMessage();
+            // Get available tools from MCP servers
+            var mcpTools = mcpClient.listTools();
+            var usingTools = mcpTools != null && !mcpTools.tools().isEmpty();
+            if (usingTools) {
+                var tools = new ArrayList<Tool>();
+                // TODO check format
+                for (var tool : mcpTools.tools()) {
+                    var toolFunction = new ToolFunction(tool.name(), tool.description(), tool.inputSchema());
+                    tools.add(new Tool(toolFunction));
+                }
+                params.put("tools", tools);
+            }
+
+            var jsonData = gson.toJson(params);
+
+            // Create request
+            var request = HttpRequest.newBuilder()
+                    .uri(new URI(url))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonData))
+                    .build();
+            // Send request and get response
+            var response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            var statusCode = response.statusCode();
+            if (statusCode != 200)
+                throw new HttpStatusException("Request returned invalid status code: " + statusCode, statusCode, url);
+
+            var responseBody = response.body();
+            if (usingTools) {
+                // if using tools, we have to check if the response is a tool call or a final message and act accordingly
+                var ragCompleteDto = gson.fromJson(responseBody, RAGCompleteFullDto.class);
+                if (ragCompleteDto.getMessage().getMessage().getToolCalls() != null && !ragCompleteDto.getMessage().getMessage().getToolCalls().isEmpty()) {
+                    // TODO only add if not empty?
+                    var responseContent = ragCompleteDto.getMessage().getMessage().getContent();
+                    if (responseContent == null || responseContent.isBlank()) {
+                        responseContent = "[Tool call requested.]";
+                    }
+                    var responseMessage = new RAGChatMessage();
+                    responseMessage.setRole(Roles.ASSISTANT);
+                    responseMessage.setPrompt(responseContent);
+                    responseMessage.setMessage(responseContent);
+                    chatState.addMessage(responseMessage);
+
+                    var answer = new StringBuilder();
+
+                    for (RAGCompleteFullMessageToolCallDto toolCall : ragCompleteDto.getMessage().getMessage().getToolCalls()) {
+                        if (toolCall.getFunction() != null) {
+                            McpSchema.CallToolRequest toolRequest = McpSchema.CallToolRequest
+                                    .builder()
+                                    .name(toolCall.getFunction().getName())
+                                    .arguments(toolCall.getFunction().getArguments())
+                                    .build();
+                            McpSchema.CallToolResult toolResult = mcpClient.callTool(toolRequest);
+                            // TODO handle error
+                            if (!toolResult.isError()) {
+                                for (McpSchema.Content content : toolResult.content()) {
+                                    if (content.type().equals("text")) {
+                                        McpSchema.TextContent textContent = (McpSchema.TextContent) content;
+                                        // TODO format result depending on model?
+                                        if (!answer.isEmpty()) {
+                                            answer.append("\n\n");
+                                        }
+                                        answer.append("Tool result for function \"").append(toolCall.getFunction().getName()).append("\":\n");
+                                        answer.append("<tool>\n").append(textContent.text()).append("\n</tool>");
+                                    } else {
+                                        // TODO support more tool results
+                                        logger.error("RAGService: Tool result content type not supported: " + content.type());
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (answer.isEmpty()) {
+                        answer.append("[Failed to get tool result.]");
+                    }
+                    var answerString = answer.toString();
+
+                    var toolMessage = new RAGChatMessage();
+                    toolMessage.setRole(Roles.TOOL);
+                    toolMessage.setPrompt(answerString);
+                    toolMessage.setMessage(answerString);
+                    chatState.addMessage(toolMessage);
+                }
+                else {
+                    // no tool call, return message as before
+                    return ragCompleteDto.getMessage().getMessage().getContent();
+                }
+            } else {
+                var ragCompleteDto = gson.fromJson(responseBody, RAGCompleteDto.class);
+                if (ragCompleteDto.getStatus() != 200) throw new HttpStatusException(
+                        "Webservice replied with an internally wrong status code, something went wrong there: " + ragCompleteDto.getStatus(), statusCode, url);
+                return ragCompleteDto.getMessage();
+            }
+        }
     }
 
     private List<Map<String, Object>> buildPromptMessages(List<RAGChatMessage> chatHistory) {
@@ -405,8 +531,9 @@ public class RAGService {
             promptMessage.put("role", chat.getRole().name().toLowerCase());
             promptMessage.put("content", chat.getPrompt());
 
-            // TODO we only send the images in the last message if available, else we use all images
             boolean isLast = (chatInd == chatHistory.size() - 1);
+
+            // TODO we only send the images in the last message if available, else we use all images
             if (lastMessageHasImage && isLast) {
                 if (chat.getImages() != null && !chat.getImages().isEmpty()) {
                     var images = new ArrayList<String>();
@@ -453,6 +580,7 @@ public class RAGService {
         params.put("url", modelConfig.getUrl());
 
         // Add the chat history
+        // TODO tools+streaming not supported, check ollama blog post for this
         var promptMessages = buildPromptMessages(chatState.getMessages());
         params.put("promptMessages", promptMessages);
 
@@ -541,25 +669,52 @@ public class RAGService {
      * @return
      */
     public List<DocumentEmbedding> getClosest3dDocumentEmbeddingsOfCorpus(float[] tsne3d, int range, long corpusId) throws SQLException {
-        var query = "SELECT * FROM documentembeddings e "
-                + "JOIN document d ON e.document_id = d.id "
-                + "WHERE d.corpusid = ? "
-                + "ORDER BY e.tsne3d <-> ? "
-                + "LIMIT ?";
-        var statement = vectorDbConnection.prepareStatement(query);
-        statement.setObject(1, corpusId);
-        statement.setObject(2, new PGvector(tsne3d));
-        statement.setInt(3, range);
-        var resultSet = statement.executeQuery();
-        return buildDocumentEmbeddingsFromResultSet(resultSet);
+        
+        var sql = """
+            SELECT e.*
+            FROM documentembeddings e
+            JOIN permitted_documents(?, ?) d ON d.id = e.document_id
+            WHERE d.corpusid = :corpusId
+            ORDER BY e.tsne3d <-> :vector
+            LIMIT :limit
+            """.replace(":corpusId", "?")
+            .replace(":vector", "?")
+            .replace(":limit", "?");
+
+        var statement = vectorDbConnection.prepareStatement(sql);
+        int idx = 1;
+        statement.setString(idx++, accessManager.current().principal());
+        statement.setInt(idx++, DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ.ordinal());
+        statement.setLong(idx++, corpusId);
+        statement.setObject(idx++, new PGvector(tsne3d));
+        statement.setInt(idx, range);
+
+        return buildDocumentEmbeddingsFromResultSet(statement.executeQuery());
+        
+        // var query = "SELECT * FROM documentembeddings e "
+        //         + "JOIN document d ON e.document_id = d.id "
+        //         + "WHERE d.corpusid = ? "
+        //         + "ORDER BY e.tsne3d <-> ? "
+        //         + "LIMIT ?";
+        // var statement = vectorDbConnection.prepareStatement(query);
+        // statement.setObject(1, corpusId);
+        // statement.setObject(2, new PGvector(tsne3d));
+        // statement.setInt(3, range);
+        // var resultSet = statement.executeQuery();
+        // return buildDocumentEmbeddingsFromResultSet(resultSet);
     }
 
     /**
      * Gets the one embedding of a document. Can return NULL.
      *
      * @return
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public DocumentEmbedding getDocumentEmbeddingOfDocument(long documentId) throws SQLException {
+    public DocumentEmbedding getDocumentEmbeddingOfDocument(long documentId) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(documentId, DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
+
         var query = "SELECT * FROM documentembeddings WHERE document_id = ?";
         var statement = vectorDbConnection.prepareStatement(query);
         statement.setLong(1, documentId);
@@ -575,12 +730,18 @@ public class RAGService {
      *
      * @param documentIds
      * @return
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public List<DocumentEmbedding> getManyDocumentEmbeddingsOfDocuments(List<Long> documentIds) throws SQLException {
+    public List<DocumentEmbedding> getManyDocumentEmbeddingsOfDocuments(List<Long> documentIds) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        
         List<DocumentEmbedding> embeddings = new ArrayList<>();
         if (documentIds == null || documentIds.isEmpty()) {
             return embeddings;
         }
+
+        accessManager.checkAccess(documentIds, DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
 
         // Construct the query with an IN clause using placeholders
         // SQL injection isn't really a threat case here, but still, use the "?" syntax to ensure proper injection
@@ -620,8 +781,13 @@ public class RAGService {
      * Gets all embedding chunks of a document
      *
      * @return
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public ArrayList<DocumentChunkEmbedding> getDocumentChunkEmbeddingsOfDocument(long documentId) throws SQLException {
+    public ArrayList<DocumentChunkEmbedding> getDocumentChunkEmbeddingsOfDocument(long documentId) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(documentId, DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
+
         var query = "SELECT * FROM documentchunkembeddings WHERE document_id = ?";
         var statement = vectorDbConnection.prepareStatement(query);
         statement.setLong(1, documentId);
@@ -640,31 +806,59 @@ public class RAGService {
             throws SQLException, IOException, URISyntaxException, InterruptedException {
         // If the corpusid = -1, then we look at ANY document. Otherwise, only at those documentchunkembeddings from
         // a document that is in the corpus.
-        var query = "";
-        if (corpusId == -1) {
-            query = "SELECT * FROM documentchunkembeddings e "
-                    + "WHERE TRIM(COALESCE(e.coveredtext, '')) <> '' "  // Checks if coveredtext is not null and not empty
-                    + "ORDER BY e.embedding <-> ? "
-                    + "LIMIT ?";
-        } else {
-            // Filter by corpusid
-            query = "SELECT * FROM documentchunkembeddings e "
-                    + "JOIN document d ON e.document_id = d.id "
-                    + "WHERE d.corpusid = ? and TRIM(COALESCE(e.coveredtext, '')) <> '' "
-                    + "ORDER BY e.embedding <-> ? "
-                    + "LIMIT ?";
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT e.*
+            FROM documentchunkembeddings e
+            JOIN permitted_documents(?, ?) d ON d.id = e.document_id
+            WHERE TRIM(COALESCE(e.coveredtext, '')) <> ''
+            """);
+
+        if (corpusId != -1) {
+            sql.append(" AND d.corpusid = ? ");
         }
-        var statement = vectorDbConnection.prepareStatement(query);
-        if (corpusId == -1) {
-            statement.setObject(1, new PGvector(getEmbeddingForText(text)));
-            statement.setInt(2, range);
-        } else {
-            statement.setLong(1, corpusId);
-            statement.setObject(2, new PGvector(getEmbeddingForText(text)));
-            statement.setInt(3, range);
+
+        sql.append(" ORDER BY e.embedding <-> ? LIMIT ? ");
+
+        var statement = vectorDbConnection.prepareStatement(sql.toString());
+        int paramIndex = 1;
+        statement.setString(paramIndex++, accessManager.current().principal());
+        statement.setInt(paramIndex++, DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ.ordinal());
+
+        if (corpusId != -1) {
+            statement.setLong(paramIndex++, corpusId);
         }
-        var resultSet = statement.executeQuery();
-        return buildDocumentChunkEmbeddingsFromResultSet(resultSet);
+
+        statement.setObject(paramIndex++, new PGvector(getEmbeddingForText(text)));
+        statement.setInt(paramIndex, range);
+
+        return buildDocumentChunkEmbeddingsFromResultSet(statement.executeQuery());
+
+        // var query = "";
+        // if (corpusId == -1) {
+        //     query = "SELECT * FROM documentchunkembeddings e "
+        //             + "WHERE TRIM(COALESCE(e.coveredtext, '')) <> '' "  // Checks if coveredtext is not null and not empty
+        //             + "ORDER BY e.embedding <-> ? "
+        //             + "LIMIT ?";
+        // } else {
+        //     // Filter by corpusid
+        //     query = "SELECT * FROM documentchunkembeddings e "
+        //             + "JOIN document d ON e.document_id = d.id "
+        //             + "WHERE d.corpusid = ? and TRIM(COALESCE(e.coveredtext, '')) <> '' "
+        //             + "ORDER BY e.embedding <-> ? "
+        //             + "LIMIT ?";
+        // }
+        // var statement = vectorDbConnection.prepareStatement(query);
+        // if (corpusId == -1) {
+        //     statement.setObject(1, new PGvector(getEmbeddingForText(text)));
+        //     statement.setInt(2, range);
+        // } else {
+        //     statement.setLong(1, corpusId);
+        //     statement.setObject(2, new PGvector(getEmbeddingForText(text)));
+        //     statement.setInt(3, range);
+        // }
+        // var resultSet = statement.executeQuery();
+        // return buildDocumentChunkEmbeddingsFromResultSet(resultSet);
     }
 
     private ArrayList<DocumentChunkEmbedding> buildDocumentChunkEmbeddingsFromResultSet(ResultSet resultSet) throws SQLException {
@@ -687,8 +881,13 @@ public class RAGService {
      * Gets all embedding sentences of a document
      *
      * @return
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public ArrayList<DocumentSentenceEmbedding> getDocumentSentenceEmbeddingsOfDocument(long documentId) throws SQLException {
+    public ArrayList<DocumentSentenceEmbedding> getDocumentSentenceEmbeddingsOfDocument(long documentId) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(documentId, DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
+
         var query = "SELECT * FROM documentsentenceembeddings WHERE document_id = ?";
         var statement = vectorDbConnection.prepareStatement(query);
         statement.setLong(1, documentId);
@@ -715,8 +914,13 @@ public class RAGService {
 
     /**
      *  Returns true if the given document by its id has documentchunkembeddings in the database.
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public boolean documentHasDocumentEmbedding(long documentId) throws SQLException {
+    public boolean documentHasDocumentEmbedding(long documentId) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(documentId, DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
+
         String query = "SELECT COUNT(*) FROM documentembeddings WHERE document_id = ?";
         try (var statement = vectorDbConnection.prepareStatement(query)) {
             statement.setLong(1, documentId);
@@ -732,8 +936,13 @@ public class RAGService {
 
     /**
      * Saves a document embedding.
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public void saveDocumentEmbedding(DocumentEmbedding documentEmbedding) throws SQLException {
+    public void saveDocumentEmbedding(DocumentEmbedding documentEmbedding) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(documentEmbedding.getDocument_id(), DocumentPermission.DOCUMENT_PERMISSION_LEVEL.WRITE);
+
         String query = "INSERT INTO documentembeddings (document_id, embedding, tsne2d, tsne3d) VALUES (?, ?, ?, ?)";
         executeUpdate(query,
                 documentEmbedding.getDocument_id(),
@@ -744,8 +953,13 @@ public class RAGService {
 
     /**
      * Updates a document embedding.
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public void updateDocumentEmbedding(DocumentEmbedding documentEmbedding) throws SQLException {
+    public void updateDocumentEmbedding(DocumentEmbedding documentEmbedding) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(documentEmbedding.getDocument_id(), DocumentPermission.DOCUMENT_PERMISSION_LEVEL.WRITE);
+
         String query = "UPDATE documentembeddings SET embedding = ?, tsne2d = ?, tsne3d = ? WHERE document_id = ?";
         executeUpdate(query,
                 new PGvector(documentEmbedding.getEmbedding()),
@@ -756,8 +970,13 @@ public class RAGService {
 
     /**
      *  Returns true if the given document by its id has documentchunkembeddings in the database.
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public boolean documentHasDocumentChunkEmbeddings(long documentId) throws SQLException {
+    public boolean documentHasDocumentChunkEmbeddings(long documentId) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(documentId, DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
+
         String query = "SELECT COUNT(*) FROM documentchunkembeddings WHERE document_id = ?";
         try (var statement = vectorDbConnection.prepareStatement(query)) {
             statement.setLong(1, documentId);
@@ -773,8 +992,13 @@ public class RAGService {
 
     /**
      * Saves a document chunk embedding.
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public void saveDocumentChunkEmbedding(DocumentChunkEmbedding documentChunkEmbedding) throws SQLException {
+    public void saveDocumentChunkEmbedding(DocumentChunkEmbedding documentChunkEmbedding) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(documentChunkEmbedding.getDocument_id(), DocumentPermission.DOCUMENT_PERMISSION_LEVEL.WRITE);
+
         String query = "INSERT INTO documentchunkembeddings (document_id, embedding, coveredtext, beginn, endd, tsne2d, tsne3d) VALUES (?, ?, ?, ?, ?, ?, ?)";
         executeUpdate(query,
                 documentChunkEmbedding.getDocument_id(),
@@ -788,8 +1012,13 @@ public class RAGService {
 
     /**
      * Updates a document chunk embedding.
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public void updateDocumentChunkEmbedding(DocumentChunkEmbedding documentChunkEmbedding) throws SQLException {
+    public void updateDocumentChunkEmbedding(DocumentChunkEmbedding documentChunkEmbedding) throws SQLException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(documentChunkEmbedding.getDocument_id(), DocumentPermission.DOCUMENT_PERMISSION_LEVEL.WRITE);
+
         String query = "UPDATE documentchunkembeddings SET embedding = ?, coveredtext = ?, beginn = ?, endd = ?, tsne2d = ?, tsne3d = ? WHERE id = ?";
         executeUpdate(query,
                 new PGvector(documentChunkEmbedding.getEmbedding()),
@@ -827,8 +1056,13 @@ public class RAGService {
      *
      * @param document
      * @return
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public DocumentEmbedding getCompleteEmbeddingFromDocument(Document document) throws IOException, URISyntaxException, InterruptedException {
+    public DocumentEmbedding getCompleteEmbeddingFromDocument(Document document) throws IOException, URISyntaxException, InterruptedException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(document.getId(), DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
+
         var documentEmbedding = new DocumentEmbedding();
         documentEmbedding.setDocument_id(document.getId());
         documentEmbedding.setEmbedding(getEmbeddingForText(document.getFullText()));
@@ -837,8 +1071,13 @@ public class RAGService {
 
     /**
      * Gets the complete and embedded lists of DocumentChunkEmbeddings for a single document
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public List<DocumentChunkEmbedding> getCompleteEmbeddingChunksFromDocument(Document document) throws IOException, URISyntaxException, InterruptedException {
+    public List<DocumentChunkEmbedding> getCompleteEmbeddingChunksFromDocument(Document document) throws IOException, URISyntaxException, InterruptedException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(document.getId(), DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
+
         // We also make an embedding from the title
         var emptyEmbeddings = getEmptyEmbeddingChunksFromText(document.getDocumentTitle() + " " + document.getFullText(), 900);
         for (var empty : emptyEmbeddings) {
@@ -855,8 +1094,13 @@ public class RAGService {
      *
      * @param document
      * @return
+     * @throws DatabaseOperationException 
+     * @throws DocumentAccessDeniedException 
      */
-    public ArrayList<DocumentSentenceEmbedding> getSentenceEmbeddingFromDocument(Document document) throws IOException, URISyntaxException, InterruptedException {
+    public ArrayList<DocumentSentenceEmbedding> getSentenceEmbeddingFromDocument(Document document) throws IOException, URISyntaxException, InterruptedException, DocumentAccessDeniedException, DatabaseOperationException {
+
+        accessManager.checkAccess(document.getId(), DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
+
         var sentenceEmbeddings = new ArrayList<DocumentSentenceEmbedding>();
 
         List<Sentence> sentences = document.getSentences();
@@ -871,11 +1115,18 @@ public class RAGService {
         return sentenceEmbeddings;
     }
 
-
     /**
+     * 
+     * 
+     * @throws DocumentAccessDeniedException
+     * @throws DatabaseOperationException
+     * 
      *  Returns true if the given document by its id has documentsentenceembeddings in the database.
      */
-    public boolean documentHasDocumentSentenceEmbeddings(long documentId) throws SQLException {
+    public boolean documentHasDocumentSentenceEmbeddings(long documentId) throws SQLException, DatabaseOperationException, DocumentAccessDeniedException {
+        
+        accessManager.checkAccess(documentId, DocumentPermission.DOCUMENT_PERMISSION_LEVEL.READ);
+
         String query = "SELECT COUNT(*) FROM documentsentenceembeddings WHERE document_id = ?";
         try (var statement = vectorDbConnection.prepareStatement(query)) {
             statement.setLong(1, documentId);
@@ -891,8 +1142,14 @@ public class RAGService {
 
     /**
      * Saves a document embedding.
+     * 
+     * @throws DocumentAccessDeniedException
+     * @throws DatabaseOperationException
      */
-    public void saveDocumentSentenceEmbedding(DocumentSentenceEmbedding documentSentenceEmbedding) throws SQLException {
+    public void saveDocumentSentenceEmbedding(DocumentSentenceEmbedding documentSentenceEmbedding) throws SQLException, DatabaseOperationException, DocumentAccessDeniedException {
+        
+        accessManager.checkAccess(documentSentenceEmbedding.getDocument_id(), DocumentPermission.DOCUMENT_PERMISSION_LEVEL.WRITE);
+
         String query = "INSERT INTO documentsentenceembeddings (document_id,sentence_id, embedding, tsne2d, tsne3d) VALUES (?, ?, ?, ?, ?)";
         executeUpdate(query,
                 documentSentenceEmbedding.getDocument_id(),
@@ -904,8 +1161,15 @@ public class RAGService {
 
     /**
      * Updates a document sentence embedding.
+     * 
+     * @throws DocumentAccessDeniedException
+     * @throws DatabaseOperationException
+     * 
      */
-    public void updateDocumentSentenceEmbedding(DocumentSentenceEmbedding documentSentenceEmbedding) throws SQLException {
+    public void updateDocumentSentenceEmbedding(DocumentSentenceEmbedding documentSentenceEmbedding) throws SQLException, DatabaseOperationException, DocumentAccessDeniedException {
+        
+        accessManager.checkAccess(documentSentenceEmbedding.getDocument_id(), DocumentPermission.DOCUMENT_PERMISSION_LEVEL.WRITE);
+        
         String query = "UPDATE documentsentenceembeddings SET embedding = ?, tsne2d = ?, tsne3d = ? WHERE id = ? AND sentence_id = ? AND document_id = ?";
         executeUpdate(query,
                 new PGvector(documentSentenceEmbedding.getEmbedding()),

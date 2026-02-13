@@ -6,7 +6,9 @@ import org.springframework.context.ApplicationContext;
 import org.texttechnologylab.uce.common.config.UceConfig;
 import org.texttechnologylab.uce.common.cronjobs.SystemJob;
 import org.texttechnologylab.uce.common.exceptions.DatabaseOperationException;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.models.util.HealthStatus;
+import org.texttechnologylab.uce.common.security.DocumentAccessManager;
 import org.texttechnologylab.uce.common.services.PostgresqlDataInterface_Impl;
 
 import java.io.IOException;
@@ -26,7 +28,10 @@ public final class SystemStatus {
     private static final Logger logger = LogManager.getLogger(SystemStatus.class);
 
     public static void initSystemStatus(long cleanupInterval, ApplicationContext serviceContext) {
-        Runnable runnable = new SystemJob(cleanupInterval, serviceContext);
+        var accessManager = serviceContext.getBean(DocumentAccessManager.class);
+        
+        Runnable runnable = accessManager.wrapAdmin(new SystemJob(cleanupInterval, serviceContext));
+
         var sessionJob = new Thread(runnable);
         sessionJob.start();
     }
@@ -53,7 +58,7 @@ public final class SystemStatus {
                             String sqlContent = Files.readString(file);
                             db.executeSqlWithoutReturn(sqlContent);
                             logger.info("*--> Successfully executed: " + file.getFileName());
-                        } catch (IOException | DatabaseOperationException ex) {
+                        } catch (IOException | DatabaseOperationException | DocumentAccessDeniedException ex) {
                             logger.error("Error trying to execute the database script " + file.getFileName(), ex);
                         }
                     });

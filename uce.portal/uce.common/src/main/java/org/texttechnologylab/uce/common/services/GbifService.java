@@ -1,5 +1,10 @@
 package org.texttechnologylab.uce.common.services;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
 import org.bson.Document;
 import org.joda.time.DateTime;
 import org.jsoup.Jsoup;
@@ -7,11 +12,6 @@ import org.texttechnologylab.uce.common.config.CommonConfig;
 import org.texttechnologylab.uce.common.models.gbif.GbifOccurrence;
 import org.texttechnologylab.uce.common.models.util.HealthStatus;
 import org.texttechnologylab.uce.common.utils.SystemStatus;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
 
 public class GbifService {
     private CommonConfig config;
@@ -41,13 +41,13 @@ public class GbifService {
         var jsonData = Document.parse(data);
         var occurrences = new ArrayList<GbifOccurrence>();
 
-        for (var result : (ArrayList<Document>) jsonData.get("results")) {
+        for (var result : jsonData.getList("results", Document.class, new ArrayList<>())) {
             var occurrence = new GbifOccurrence();
             occurrence.setGbifTaxonId(taxonId);
             occurrence.setOccurrenceId(Long.parseLong(result.get("key").toString()));
             occurrence.setImportedDate(DateTime.now());
 
-            var media = (ArrayList<Document>) result.get("media");
+            var media = result.getList("media", Document.class, new ArrayList<>());
             if (media != null && !media.isEmpty())
                 occurrence.setImageUrl(Optional.ofNullable(media.get(0).get("identifier"))
                         .map(Object::toString)

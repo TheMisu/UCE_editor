@@ -1,6 +1,7 @@
 package org.texttechnologylab.uce.common.services;
 
 import org.texttechnologylab.uce.common.exceptions.DatabaseOperationException;
+import org.texttechnologylab.uce.common.exceptions.DocumentAccessDeniedException;
 import org.texttechnologylab.uce.common.models.biofid.GnFinderTaxon;
 import org.texttechnologylab.uce.common.models.corpus.DocumentKeywordDistribution;
 import org.texttechnologylab.uce.common.models.corpus.KeywordDistribution;
@@ -25,7 +26,7 @@ public class WikiService {
         this.sparqlService = sparqlService;
     }
 
-    public CorpusWikiPageViewModel buildCorpusWikiPageViewModle(long corpusId, String coveredText) throws DatabaseOperationException {
+    public CorpusWikiPageViewModel buildCorpusWikiPageViewModle(long corpusId, String coveredText) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new CorpusWikiPageViewModel();
         var corpus = db.getCorpusById(corpusId);
         viewModel.setWikiModel(corpus);
@@ -51,8 +52,9 @@ public class WikiService {
 
     /**
      * Builds a view model to render a lemma annotation wiki page
+     * @throws DocumentAccessDeniedException 
      */
-    public LemmaAnnotationWikiPageViewModel buildLemmaAnnotationWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException {
+    public LemmaAnnotationWikiPageViewModel buildLemmaAnnotationWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new LemmaAnnotationWikiPageViewModel();
         var lemma = db.getLemmaById(id);
         viewModel.setWikiModel(lemma);
@@ -71,15 +73,16 @@ public class WikiService {
 
     /**
      * Builds a view model to render a negation (cue basis) annotation wiki page : id = cue_id
+     * @throws DocumentAccessDeniedException 
      */
-    public NegationAnnotationWikiPageViewModel buildNegationAnnotationWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException {
+    public NegationAnnotationWikiPageViewModel buildNegationAnnotationWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new NegationAnnotationWikiPageViewModel();
         //var negation = db.getCompleteNegationById(id);
         var negation = db.getCompleteNegationByCueId(id);
         var cue = negation.getCue();
         viewModel.setWikiModel(cue);
         viewModel.setPage(cue.getPage());
-        viewModel.setDocument(db.getDocumentById(negation.getDocument().getId()));
+        viewModel.setDocument(db.getDocumentById(negation.getDocument().getId())); 
         viewModel.setCorpus(db.getCorpusById(viewModel.getDocument().getCorpusId()).getViewModel());
         viewModel.setCoveredText(coveredText);
         //viewModel.setCoveredText("lol");
@@ -98,8 +101,9 @@ public class WikiService {
 
     /**
      * Gets an UnifiedTopicWikiPageViewModel to render a Wikipage for that annotation
+     * @throws DocumentAccessDeniedException 
      */
-    public UnifiedTopicWikiPageViewModel buildUnifiedTopicWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException {
+    public UnifiedTopicWikiPageViewModel buildUnifiedTopicWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new UnifiedTopicWikiPageViewModel();
         var unifiedTopic = db.getInitializedUnifiedTopicById(id);
         viewModel.setWikiModel(unifiedTopic);
@@ -115,8 +119,9 @@ public class WikiService {
 
     /**
      * Gets a DocumentTopicDistributionWikiPageViewModel to render a Wikipage for that topic distribution
+     * @throws DocumentAccessDeniedException 
      */
-    public TopicWikiPageViewModel buildTopicWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException {
+    public TopicWikiPageViewModel buildTopicWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new TopicWikiPageViewModel();
         var documentTopThreeTopics = db.getDocumentTopThreeTopicsById(id);
         viewModel.setWikiModel(documentTopThreeTopics);
@@ -145,8 +150,9 @@ public class WikiService {
 
     /**
      * Gets an DocumentAnnitationWikiPageViewmodel to render a Wikipage for this document.
+     * @throws DocumentAccessDeniedException 
      */
-    public DocumentAnnotationWikiPageViewModel buildDocumentWikiPageViewModel(long id) throws DatabaseOperationException {
+    public DocumentAnnotationWikiPageViewModel buildDocumentWikiPageViewModel(long id) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new DocumentAnnotationWikiPageViewModel();
         var doc = db.getDocumentById(id);
         viewModel.setDocument(doc);
@@ -166,8 +172,9 @@ public class WikiService {
 
     /**
      * Gets an TaxonAnnotationWikiPageViewModel to render a Wikipage for that annotation
+     * @throws DocumentAccessDeniedException 
      */
-    public TaxonAnnotationWikiPageViewModel buildTaxonWikipageViewModel(long id, String coveredText, Class<?> clazz) throws DatabaseOperationException, IOException {
+    public TaxonAnnotationWikiPageViewModel buildTaxonWikipageViewModel(long id, String coveredText, Class<?> clazz) throws DatabaseOperationException, IOException, DocumentAccessDeniedException {
         var viewModel = new TaxonAnnotationWikiPageViewModel();
         viewModel.setCoveredText(coveredText);
         var taxon = clazz == GnFinderTaxon.class ? db.getGnFinderTaxonById(id) : db.getGazetteerTaxonById(id);
@@ -183,7 +190,7 @@ public class WikiService {
         viewModel.setNextRDFNodes(
                 sparqlService.queryBySubject(biofidUrl));
         viewModel.setGbifOccurrences(new ArrayList<>());
-        viewModel.setDocument(db.getDocumentById(taxon.getDocumentId()));
+        viewModel.setDocument(db.getDocumentById(taxon.getDocumentId())); 
         viewModel.setAnnotationType("Taxon");
         viewModel.setCorpus(db.getCorpusById(viewModel.getDocument().getCorpusId()).getViewModel());
         viewModel.setSimilarDocuments(
@@ -205,8 +212,9 @@ public class WikiService {
 
     /**
      * Builds a SentenceAnnotationWikiPageViewModel for a wiki page for a Sentence annotation.
+     * @throws DocumentAccessDeniedException 
      */
-    public SentenceWikiPageViewModel buildSentenceAnnotationWikiPageViewModel(long id) throws DatabaseOperationException {
+    public SentenceWikiPageViewModel buildSentenceAnnotationWikiPageViewModel(long id) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new SentenceWikiPageViewModel();
         var sentence = db.getSentenceAnnotationById(id);
         viewModel.setCoveredText(sentence.getCoveredText());
@@ -229,7 +237,7 @@ public class WikiService {
         return viewModel;
     }
 
-    public GeoNameAnnotationWikiPageViewModel buildGeoNameAnnotationWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException {
+    public GeoNameAnnotationWikiPageViewModel buildGeoNameAnnotationWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new GeoNameAnnotationWikiPageViewModel();
         viewModel.setCoveredText(coveredText);
         var geoName = db.getGeoNameAnnotationById(id);
@@ -254,8 +262,9 @@ public class WikiService {
 
     /**
      * Gets an AnnotationWikiPageViewModel to render a Wikipage for that annotation.
+     * @throws DocumentAccessDeniedException 
      */
-    public NamedEntityAnnotationWikiPageViewModel buildTimeAnnotationWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException {
+    public NamedEntityAnnotationWikiPageViewModel buildTimeAnnotationWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new NamedEntityAnnotationWikiPageViewModel();
         viewModel.setCoveredText(coveredText);
         // Currently, Time is handled like a NamedEntity.
@@ -281,8 +290,9 @@ public class WikiService {
 
     /**
      * Gets an AnnotationWikiPageViewModel to render a Wikipage for that annotation.
+     * @throws DocumentAccessDeniedException 
      */
-    public NamedEntityAnnotationWikiPageViewModel buildNamedEntityWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException {
+    public NamedEntityAnnotationWikiPageViewModel buildNamedEntityWikiPageViewModel(long id, String coveredText) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new NamedEntityAnnotationWikiPageViewModel();
         viewModel.setCoveredText(coveredText);
         var ner = db.getNamedEntityById(id);
@@ -307,8 +317,9 @@ public class WikiService {
 
     /**
      * Gets a KeywordAnnotationWikiPageViewModel that can be used to render a Wikipage for a Topic annotation.
+     * @throws DocumentAccessDeniedException 
      */
-    public KeywordAnnotationWikiPageViewModel buildTopicAnnotationWikiPageViewModel(long id, String type, String coveredText) throws DatabaseOperationException {
+    public KeywordAnnotationWikiPageViewModel buildTopicAnnotationWikiPageViewModel(long id, String type, String coveredText) throws DatabaseOperationException, DocumentAccessDeniedException {
         var viewModel = new KeywordAnnotationWikiPageViewModel();
         viewModel.setCoveredText(coveredText);
         Class<? extends KeywordDistribution> clazz = null;

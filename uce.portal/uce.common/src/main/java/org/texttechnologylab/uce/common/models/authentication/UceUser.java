@@ -3,6 +3,11 @@ package org.texttechnologylab.uce.common.models.authentication;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.EnumSet;
+import java.util.Set;
+
+import org.texttechnologylab.uce.common.security.DocumentAccessContext;
+
 @Getter
 @Setter
 public class UceUser {
@@ -13,6 +18,8 @@ public class UceUser {
     private String name;
     private String email;
     private String username;
+    private Set<String> groups;
+    private EnumSet<DocumentAccessContext.Role> roles;
 
     public String getAbbreviation() {
         if (name == null || name.trim().isEmpty()) {

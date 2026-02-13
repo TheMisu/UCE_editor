@@ -2,9 +2,20 @@ package org.texttechnologylab.uce.common.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.texttechnologylab.uce.common.services.*;
+import org.springframework.context.annotation.Import;
+import org.texttechnologylab.uce.common.services.AuthenticationService;
+import org.texttechnologylab.uce.common.services.GbifService;
+import org.texttechnologylab.uce.common.services.GoetheUniversityService;
+import org.texttechnologylab.uce.common.services.JenaSparqlService;
+import org.texttechnologylab.uce.common.services.LexiconService;
+import org.texttechnologylab.uce.common.services.MapService;
+import org.texttechnologylab.uce.common.services.PostgresqlDataInterface_Impl;
+import org.texttechnologylab.uce.common.services.RAGService;
+import org.texttechnologylab.uce.common.services.S3StorageService;
+import org.texttechnologylab.uce.common.services.WikiService;
 
 @Configuration
+@Import({DocumentAccessConfig.class})
 public class SpringConfig {
 
     @Bean
