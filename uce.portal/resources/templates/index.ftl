@@ -15,6 +15,7 @@
         <#include "*/css/layered-search-builder.css">
         <#include "*/css/kwic.css">
         <#include "*/css/drawflow.css">
+        <#include "*/css/nlp-tree.css">
         <#include "*/css/analysis.css">
 
         <#-- leaflet specific requirements -->

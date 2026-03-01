@@ -41,12 +41,14 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import org.texttechnologylab.models.authentication.DocumentPermission;
+import org.texttechnologylab.uce.analysis.modules.ModelGroup;
 import org.texttechnologylab.uce.common.config.corpusConfig.RenderModeConfig;
 import org.texttechnologylab.uce.common.security.DocumentAccessContext;
 import org.texttechnologylab.uce.common.security.DocumentAccessManager;
@@ -61,6 +63,10 @@ public class DocumentApi implements UceApi {
     private final FeedbackDocumentMapper feedbackMapper = new FeedbackDocumentMapper();
     private final RendererRegistry rendererRegistry;
 
+    private List<ModelGroup> modelGroups;
+    private LinkedHashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>> ttlabScorer;
+    private LinkedHashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>> cohMetrix;
+
     public DocumentApi(ApplicationContext serviceContext, Configuration freemarkerConfig) {
         this.serviceContext = serviceContext;
         this.db = serviceContext.getBean(PostgresqlDataInterface_Impl.class);
@@ -68,6 +74,22 @@ public class DocumentApi implements UceApi {
         this.freemarkerConfig = freemarkerConfig;
 
         this.rendererRegistry = serviceContext.getBean(RendererRegistry.class);
+    }
+
+    /**
+     * Sets the data needed for rendering the NLP model menu in the TipTap editor
+     *
+     * @param modelGroups The list of nlp model groups
+     * @param ttlabScorer The TTLab scorer models
+     * @param cohMetrix The Coh-Metrix models
+     */
+    public void setNlpModelData(
+            List<ModelGroup> modelGroups,
+            LinkedHashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>> ttlabScorer,
+            LinkedHashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>> cohMetrix) {
+        this.modelGroups = modelGroups;
+        this.ttlabScorer = ttlabScorer;
+        this.cohMetrix = cohMetrix;
     }
 
     public void getUceMetadataOfDocument(Context ctx) throws IOException {
@@ -293,6 +315,9 @@ public class DocumentApi implements UceApi {
             model.put("rightPaneModel", panes.getRightPaneModel());
             model.put("document", doc);
             model.put("corpus", corpus);
+            model.put("modelGroups", this.modelGroups);
+            model.put("ttlabScorer", this.ttlabScorer);
+            model.put("cohMetrix", this.cohMetrix);
 
             // If this document was opened from an active search, we can highlight the search tokens in the text
             // This is only optional and works fine even without the search tokens.

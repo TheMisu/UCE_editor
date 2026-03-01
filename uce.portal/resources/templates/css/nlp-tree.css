@@ -1,0 +1,106 @@
+/* Treeview scrolling */
+.analysis-treeview {
+    font-family: "Segoe UI", Tahoma, sans-serif;
+    font-size: 13px;
+    list-style-type: none;
+    padding-left: 0;
+    color: #000;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    display: inline-block;
+    min-width: max-content;
+}
+
+/* Wrapper for horizontal scrolling */
+.treeview-wrapper {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+/* Standard-Styling */
+.analysis-treeview li {
+    margin: 0;
+    padding: 2px 0;
+}
+
+/* Gruppen- and Model-Checkboxes */
+.analysis-treeview .tree-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    color: #000;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.analysis-treeview .tree-toggle:hover {
+    background-color: #e5f1fb;
+}
+
+.analysis-treeview .tree-toggle input[type="checkbox"] {
+    margin-right: 0.5rem;
+}
+
+.analysis-treeview .tree-toggle label {
+    margin: 0;
+    padding: 0;
+}
+
+/* Ordner-Icon */
+.analysis-treeview .toggle-icon {
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+}
+
+.analysis-treeview .toggle-icon::before {
+    content: "\1F4C1"; /* closed */
+}
+
+.analysis-treeview .toggle-icon.open::before {
+    content: "\1F4C2"; /* open */
+}
+
+/* Nested-Elements */
+.analysis-treeview .nested {
+    display: none;
+    padding-left: 1.2rem;
+    margin: 2px 0 0 10px;
+    border-left: 1px dotted #ccc;
+}
+
+.analysis-treeview .nested.active {
+    display: block;
+}
+
+/* Model-rows */
+.analysis-treeview .model-item {
+    display: flex;
+    align-items: center;
+    padding: 2px 4px;
+    white-space: nowrap;
+}
+
+.analysis-treeview .model-item label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Modell-Checkboxes */
+.analysis-treeview .model-item input[type="checkbox"] {
+    margin-right: 0.4rem;
+}

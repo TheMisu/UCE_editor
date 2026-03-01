@@ -380,6 +380,8 @@ public class App {
         LinkedHashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>> cohMetrixMap = cohMetrixInfo.getCohMetrixMap();
         List<ModelGroup> groups = modelResources.getGroupedModelObjects();
 
+        registry.get(DocumentApi.class).setNlpModelData(groups, taInputMap, cohMetrixMap);
+
         config.router.apiBuilder(() -> {
                     var accessManager = context.getBean(DocumentAccessManager.class);
                     var contextFactory = context.getAutowireCapableBeanFactory()

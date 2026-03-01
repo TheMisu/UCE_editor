@@ -21,6 +21,7 @@
     </style>
     <style>
         <#include "*/css/bg-anim.css">
+        <#include "*/css/nlp-tree.css">
         <#include "*/css/tiptap.css">
     </style>
     <style>
@@ -477,6 +478,29 @@
         nav.querySelectorAll('a').forEach(link => link.addEventListener('click', close));
     })();
 </script>
+
+<div id="nlp-tools" style="display:none;">
+    <h6 class="mb-2"><i class="fa fa-language mr-1"></i> NLP Models</h6>
+    <div class="nlp-tools-tree">
+        <#include "/wiki/components/nlpModelTree.ftl">
+    </div>
+    <div id="editor-claim-field-wrapper" style="display:none;">
+        <label>Claim</label>
+        <textarea id="editor-claim-text" rows="3" placeholder="Claim"></textarea>
+    </div>
+    <div id="editor-text-field-wrapper" style="display:none;">
+        <label>Cohesion Text</label>
+        <textarea id="editor-coherence-text" rows="3" placeholder="Text"></textarea>
+    </div>
+    <div id="editor-stance-field-wrapper" style="display:none;">
+        <label>Hypothesis</label>
+        <textarea id="editor-stance-text" rows="3" placeholder="Hypothesis"></textarea>
+    </div>
+    <div id="editor-llm-field-wrapper" style="display:none;">
+        <label>System Prompt</label>
+        <textarea id="editor-llm-text" rows="3" placeholder="System prompt"></textarea>
+    </div>
+</div>
 
 <script type="module" src="/js/dist/tiptap-bundle.js"></script>
 </body>

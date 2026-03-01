@@ -1,5 +1,6 @@
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
+import { NlpModelTreeController } from './nlp-model-tree.js';
 
 /**
  * Handles the text editing capabilities of the TipTap editor
@@ -12,35 +13,67 @@ export class TipTapEditor {
         this.editorContainer = null;
         this.editor = null;
         this.currentDocumentID = null;
+        this.nlpController = null;
         this.initContainer();
+        this.initNlpMenu();
         this.initEventListeners();
     }
 
     /**
-     * Creates the editor UI
-     *
-     * The editor contains:
-     *   - toolbar with Save button
+     * Creates the editor UI:
+     *   - toolbar with Save and NLP buttons
      *   - text editing area
+     *   - NLP Models menu
      */
     initContainer() {
         this.editorContainer = document.createElement('div');
         this.editorContainer.className = 'tiptap-editor-container';
         this.editorContainer.innerHTML =
             `<div class="tiptap-toolbar">
+                <button data-action="toggle-nlp" class="btn btn-outline-secondary btn-sm" title="NLP Models">
+                    <i class="fa fa-language"></i> NLP
+                </button>
                 <button data-action="save" class="ml-auto btn btn-primary">Save</button>
                 <button data-action="close"><i class="fas fa-times"></i></button>
             </div>
-            <div class="tiptap-editor"></div>`;
+            <div class="tiptap-editor-body">
+                <div class="tiptap-nlp-panel"></div>
+                <div class="tiptap-editor"></div>
+            </div>`;
         document.body.appendChild(this.editorContainer);
     }
 
     /**
+     * Moves the nlp-tools div from the ftl into the editor's NLP pane
+     * and initializes the NlpModelTreeController
+     */
+    initNlpMenu() {
+        // gets the panels to work with
+        const sourcePanel = document.getElementById('nlp-tools');
+        const targetPanel = this.editorContainer.querySelector('.tiptap-nlp-panel');
+
+        if (sourcePanel && targetPanel) {
+            // move source panel's children into the editor's panel then remove the source
+            while (sourcePanel.firstChild) {
+                targetPanel.appendChild(sourcePanel.firstChild);
+            }
+            sourcePanel.remove();
+
+            // init the NlpModelTreeController
+            const treeRoot = targetPanel.querySelector('.nlp-tools-tree');
+            if (treeRoot) {
+                this.nlpController = new NlpModelTreeController(treeRoot, {
+                    factchecking: { wrapperId: 'editor-claim-field-wrapper', inputId: 'editor-claim-text' },
+                    cohesion: { wrapperId: 'editor-text-field-wrapper', inputId: 'editor-coherence-text' },
+                    stance: { wrapperId: 'editor-stance-field-wrapper', inputId: 'editor-stance-text' },
+                    llm: { wrapperId: 'editor-llm-field-wrapper', inputId: 'editor-llm-text' }
+                });
+            }
+        }
+    }
+
+    /**
      * Sets up event listeners for the text editor
-     *
-     * Supports:
-     *   - opening the editor using the Edit Document button
-     *   - performing certain actions using buttons on the editor's toolbar
      */
     initEventListeners() {
         // listener for the button that opens the editor
@@ -48,7 +81,7 @@ export class TipTapEditor {
             this.openEditor();
         });
 
-        // listener for toolbar actions 
+        // listener for toolbar actions
         this.editorContainer.addEventListener('click', (e) => {
             const button = e.target.closest('button');
             if (!button) return;
@@ -63,10 +96,23 @@ export class TipTapEditor {
                     case 'close':
                         this.closeEditor();
                         break;
+                    case 'toggle-nlp':
+                        this.toggleNlpPanel();
+                        break;
                 }
             }
         });
     }
+
+    /*
+     * Toggles the visibility of the NLP model panel
+     */
+    toggleNlpPanel() {
+        const panel = this.editorContainer.querySelector('.tiptap-nlp-panel');
+        panel.classList.toggle('active');
+        this.editorContainer.classList.toggle('nlp-expanded');
+    }
+
     /**
     * Opens the editor and loads the document's fulltext (embedded in the page)
     */
@@ -118,9 +164,6 @@ export class TipTapEditor {
                         htmlFragments.push(`<p>${currentPara.join('<br>')}</p>`);
                         currentPara = [];
                     }
-                    // for (let e = 0; e < emptyCount; e++) {
-                    //     htmlFragments.push('<p></p>');
-                    // }
                     htmlFragments.push('<p></p>');
                 }
 
@@ -157,9 +200,8 @@ export class TipTapEditor {
                 }),
             ],
             content: editorContent,
-            // content: fullText,
         });
-        this.editorContainer.style.display = 'block';
+        this.editorContainer.style.display = 'flex';
     }
 
     /**
@@ -179,6 +221,30 @@ export class TipTapEditor {
             documentId = readerContainer.dataset.documentId;
         }
 
+        // collect selected models and special inputs
+        const selectedModels = this.nlpController.getSelectedModels();
+        const specialInputs = this.nlpController.getSpecialInputs();
+
+        // make sure the user enters prompts for the special models
+        if (this.nlpController) {
+            if (this.nlpController.hasModelType('factchecking') && !specialInputs.inputClaim) {
+                alert('Please enter a claim for the fact checking model.');
+                return;
+            }
+            if (this.nlpController.hasModelType('cohesion') && !specialInputs.inputCoherence) {
+                alert('Please enter text for the cohesion model.');
+                return;
+            }
+            if (this.nlpController.hasModelType('stance') && !specialInputs.inputStance) {
+                alert('Please enter a hypothesis for the stance model.');
+                return;
+            }
+            if (this.nlpController.hasModelType('llm') && !specialInputs.inputLLM) {
+                alert('Please enter a system prompt for the LLM model.');
+                return;
+            }
+        }
+
         // show spinning animation during processing
         const saveBtn = this.editorContainer.querySelector('[data-action="save"]');
         const originalBtnText = saveBtn.innerHTML;
@@ -196,9 +262,13 @@ export class TipTapEditor {
                     documentId: documentId,
                     corpusId: corpusId,
                     editedText: editedText,
-                    language: "de", // hardcoded bc the language detection service stopped working
-                    useOriginalModels: true,
-                    updateXmi: true
+                    language: "de",
+                    selectedModels: selectedModels,
+                    updateXmi: true,
+                    inputClaim: specialInputs.inputClaim || null,
+                    inputCoherence: specialInputs.inputCoherence || null,
+                    inputStance: specialInputs.inputStance || null,
+                    inputLLM: specialInputs.inputLLM || null
                 })
             });
 
