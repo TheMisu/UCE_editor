@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "webpack --config webpack.config.js",
+    "build": "cp node_modules/mammoth/mammoth.browser.min.js src/main/resources/public/js/mammoth.browser.min.js && webpack --config webpack.config.js",
     "dev": "webpack --config webpack.config.js --watch"
   },
   "dependencies": {
     "@tiptap/core": "^2.0.0",
     "@tiptap/pm": "^2.0.0",
-    "@tiptap/starter-kit": "^2.0.0"
+    "@tiptap/starter-kit": "^2.0.0",
+    "mammoth": "^1.8.0"
     },
   "devDependencies": {
     "webpack": "^5.76.0",

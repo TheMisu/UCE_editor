@@ -270,6 +270,89 @@ function reloadCorpusComponents() {
     $('#corpus-select').change();
 }
 
+/**
+ * Handles the Word document upload by:
+ * 1. Extracting the text from the .docx file using mammoth.js
+ * 2. Creating an "empty" document in the DB
+ * 3. Running the NLP pipeline to get basic annotations
+ */
+async function uploadWordDocument() {
+    const file = $('#word-upload-input')[0].files[0];
+    const corpusId = Number($('#word-corpus-select').val());
+    if (!file || !corpusId) return;
+
+    const showStep = (id) => {
+        $('#word-upload-steps').show();
+        $('#word-step-extract, #word-step-create, #word-step-analyze').addClass('display-none');
+        $('#' + id).removeClass('display-none');
+    };
+
+    $('#word-upload-error').hide();
+    $('#word-upload-submit').prop('disabled', true);
+
+    try {
+        // convert the .docx to HTML using mammoth and extract the plain text
+        showStep('word-step-extract');
+        const arrayBuffer = await file.arrayBuffer();
+        const { value: html } = await mammoth.convertToHtml({ arrayBuffer });
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html;
+        tempDiv.style.position = 'absolute';
+        tempDiv.style.left = '-9999px';
+        document.body.appendChild(tempDiv);
+        const blocks = Array.from(tempDiv.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li'))
+            .map(el => el.innerText.trim())
+            .filter(t => t.length > 0);
+        const text = blocks.join('\n\n\n');
+        document.body.removeChild(tempDiv);
+
+        // create a DB entry for the new document if it doesnt already exist
+        showStep('word-step-create');
+        const createResp = await fetch('/api/document/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, corpusId, title: file.name })
+        });
+
+        if (!createResp.ok) {
+            const msg = await createResp.text();
+            throw new Error(createResp.status === 409 ? msg : 'Error: ' + msg);
+        }
+        const { document_id, documentId, language: rawLanguage } = await createResp.json();
+        const language = rawLanguage ? rawLanguage.split('-')[0] : 'de';
+
+        // run the NLP pipeline with basic models (SpaCy/ParlBert)
+        showStep('word-step-analyze');
+        const analyzeResp = await fetch('/api/document/reanalyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documentId, corpusId, editedText: text, language, selectedModels: [] })
+        });
+        if (!analyzeResp.ok) throw new Error(await analyzeResp.text());
+
+        $('#word-upload-modal').hide();
+        $('#word-upload-input').val('');
+        $('#word-upload-success').text('Document "' + file.name + '" uploaded and analyzed successfully!').show();
+        setTimeout(() => $('#word-upload-success').fadeOut(), 5000);
+    } catch (err) {
+        $('#word-upload-error').text(err.message).show();
+    } finally {
+        $('#word-upload-submit').prop('disabled', false);
+        $('#word-upload-steps').hide();
+    }
+}
+
+$('body').on('click', '#word-upload-btn', function () {
+    $('#word-upload-error').hide();
+    $('#word-upload-success').hide();
+    $('#word-upload-steps').hide();
+    $('#word-upload-modal').show();
+});
+
+$('body').on('click', '#word-upload-submit', function () {
+    uploadWordDocument();
+});
+
 $(document).ready(function () {
     console.log('Webpage loaded!');
     activatePopovers();

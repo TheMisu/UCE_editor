@@ -18,6 +18,7 @@ import org.texttechnologylab.uce.common.exceptions.ExceptionUtils;
 import org.texttechnologylab.uce.common.models.authentication.UceUser;
 import org.texttechnologylab.uce.common.models.corpus.Document;
 import org.texttechnologylab.uce.common.models.corpus.UCEMetadataValueType;
+import org.texttechnologylab.uce.common.models.dto.CreateDocumentRequestDto;
 import org.texttechnologylab.uce.common.models.dto.ReanalysisRequestDto;
 import org.texttechnologylab.uce.common.models.dto.ReanalysisResponseDto;
 import org.texttechnologylab.uce.common.models.search.SearchType;
@@ -846,6 +847,48 @@ public class DocumentApi implements UceApi {
             logger.error("Error retrieving unified topic to sentence mapping.", ex);
             ctx.status(500);
             ctx.render("defaultError.ftl", Map.of("information", "Error retrieving unified topic to sentence mapping."));
+        }
+    }
+
+    /**
+     * Creates a document in the DB containing just the plain text
+     * If a document with that name already exists in the selected corpus, then do nothing
+     * Used to create a DB entry for the document before sending it to the NLP pipeline for basic annotations
+     * before displaying it on the documentReader
+     * @param ctx The Javalin context
+     */
+    public void createDocument(Context ctx) {
+        var gson = new Gson();
+        try {
+            var request = gson.fromJson(ctx.body(), CreateDocumentRequestDto.class);
+            var corpus = db.getCorpusById(request.getCorpusId());
+
+            // stops the upload process if the document has already been uploaded
+            if (db.documentExists(request.getCorpusId(), request.getTitle())) {
+                ctx.status(409);
+                ctx.result("This document already exists in the selected corpus.");
+                return;
+            }
+
+            var doc = new Document();
+            doc.setFullText(request.getText());
+            doc.setCorpusId(request.getCorpusId());
+            doc.setDocumentTitle(request.getTitle());
+            doc.setDocumentId(request.getTitle());
+            doc.setLanguage(CorpusConfig.fromJson(corpus.getCorpusJsonConfig()).getLanguage());
+            doc.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            db.saveDocument(doc);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("document_id", doc.getId());
+            result.put("documentId", doc.getDocumentId());
+            result.put("language", doc.getLanguage());
+            ctx.status(200);
+            ctx.json(result);
+        } catch (Exception ex) {
+            logger.error("Error creating document", ex);
+            ctx.status(500);
+            ctx.result("Error creating document: " + ex.getMessage());
         }
     }
 

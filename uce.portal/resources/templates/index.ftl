@@ -55,6 +55,7 @@
     <script type="module" src="js/md-block.js"></script>
 
     <script src="js/gsap.min.js"></script>
+    <script src="js/mammoth.browser.min.js"></script>
     <script src="js/require.js"></script>
     <!--<script src="https://unpkg.com/@tweenjs/tween.js@^20.0.0/dist/tween.umd.js"></script>-->
     <title>${title}</title>
